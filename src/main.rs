@@ -26,5 +26,5 @@ fn handle_connections(mut stream: TcpStream) {
     let buf_reader = BufReader::new(&mut stream);
     let command = buf_reader.lines().next().unwrap().unwrap();
     println!("Command {}", command);
-    stream.write_all("+PONG\n\r".as_bytes()).unwrap()
+    stream.write_all("+PONG\r\n".as_bytes()).unwrap()
 }
