@@ -36,10 +36,6 @@ fn handle_connections(mut stream: TcpStream) {
     let response = "*2\r\n+PONG\r\n+PONG\r\n";
 
     loop {
-        // if let Ok(res) = parse_frame(&mut buf) {
-        //     println!("command: {:?}", res);
-        // }
-
         match stream.read(&mut buf) {
             Ok(size) => {
                 println!("read buffer {}, size {size}", buf.len());
