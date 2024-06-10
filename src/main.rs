@@ -108,7 +108,7 @@ fn frame_to_string<'a>(
             // dst.write(b"$")?;
             // let len = data.len() as u64;
             // write_decimal(dst, len)?;
-            if String::from_utf8(data.to_vec()).unwrap() == "ping".to_string() {
+            if String::from_utf8(data.to_vec()).unwrap().to_lowercase() == "ping".to_string() {
                 dst.write("+PONG".as_bytes())?;
             } else {
                 dst.write(data)?;
