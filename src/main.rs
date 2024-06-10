@@ -5,6 +5,7 @@ use std::{
     net::{TcpListener, TcpStream},
     num::TryFromIntError,
     string::FromUtf8Error,
+    thread,
 };
 
 use bytes::{Buf, Bytes};
@@ -13,18 +14,25 @@ use bytes::{Buf, Bytes};
 async fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
-
+    let mut handles = vec![];
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 println!("accepted new connection");
-                handle_connections(stream);
+                let handle = thread::spawn(move || {
+                    handle_connections(stream);
+                });
+                handles.push(handle);
             }
             Err(e) => {
                 println!("error: {}", e);
             }
         }
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
     }
 }
 
