@@ -1,7 +1,7 @@
 // Uncomment this block to pass the first stage
 use std::{
     fmt,
-    io::{self, BufRead, BufReader, BufWriter, Cursor, Write},
+    io::{self, BufRead, BufReader, BufWriter, Cursor, Read, Write},
     net::{TcpListener, TcpStream},
     num::TryFromIntError,
     string::FromUtf8Error,
@@ -29,61 +29,72 @@ async fn main() {
 }
 
 fn handle_connections(mut stream: TcpStream) {
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
-    let mut stream_buf = BufWriter::new(&mut stream);
-    let mut temp_buf = Vec::with_capacity(4 * 1024);
-    let mut backoff = 1;
-    let mut string = String::from("");
+    // let mut reader = BufReader::new(stream.try_clone().unwrap());
+    // let mut stream_buf = BufWriter::new(&mut stream);
+    // let mut temp_buf = Vec::with_capacity(4 * 1024);
+    // let mut backoff = 1;
+    // let mut string = String::from("");
 
     let mut output_frame: Frame = Frame::Null;
     loop {
-        match reader.read_line(&mut string) {
-            Ok(_size) => {
-                // println!("Read size {}", size);
-                println!("stream {:?}", string);
-
-                let buffer_len = reader.buffer().chunk().len();
-                // println!("Buffer len: {:?}", reader.buffer().chunk().len());
-                if buffer_len == 0 {
-                    let _ = &mut temp_buf
-                        .write(string.bytes().collect::<Vec<u8>>().as_slice())
-                        .unwrap();
-                    // println!("Write size {write_size}");
-
-                    println!("Read stream bufferred {:?}", temp_buf.len());
-                    let mut cursor = Cursor::new(&temp_buf[..]);
-                    let frame_result = parse_frame(&mut cursor);
-                    match frame_result {
-                        Ok(frame) => {
-                            output_frame = frame;
-                            println!("Parsed frame: {:?}", &output_frame);
-                            break;
-                        }
-                        Err(err) => {
-                            println!("Error parsing frames {}", err);
-                        }
-                    }
-                    break;
-                }
-            }
-            Err(err) => {
-                println!("Error reading stream buffer {:?}", err);
-            }
-        }
-
-        if backoff == 10 {
+        let mut buf = [0; 4 * 1024];
+        let count = stream.read(&mut buf).unwrap();
+        println!(
+            "Read {:?}, count: {count}",
+            String::from_utf8(buf.clone()[..count].to_vec()).unwrap()
+        );
+        if count == 0 {
             break;
         }
-        backoff += 1;
+
+        stream.write(b"+PONG\r\n").unwrap();
+        // match reader.read_line(&mut string) {
+        //     Ok(_size) => {
+        //         // println!("Read size {}", size);
+        //         println!("stream {:?}", string);
+
+        //         let buffer_len = reader.buffer().chunk().len();
+        //         // println!("Buffer len: {:?}", reader.buffer().chunk().len());
+        //         if buffer_len == 0 {
+        //             let _ = &mut temp_buf
+        //                 .write(string.bytes().collect::<Vec<u8>>().as_slice())
+        //                 .unwrap();
+        //             // println!("Write size {write_size}");
+
+        //             println!("Read stream bufferred {:?}", temp_buf.len());
+        //             let mut cursor = Cursor::new(&temp_buf[..]);
+        //             let frame_result = parse_frame(&mut cursor);
+        //             match frame_result {
+        //                 Ok(frame) => {
+        //                     output_frame = frame;
+        //                     println!("Parsed frame: {:?}", &output_frame);
+        //                     break;
+        //                 }
+        //                 Err(err) => {
+        //                     println!("Error parsing frames {}", err);
+        //                 }
+        //             }
+        //             break;
+        //         }
+        //     }
+        //     Err(err) => {
+        //         println!("Error reading stream buffer {:?}", err);
+        //     }
+        // }
+
+        // if backoff == 10 {
+        //     break;
+        // }
+        // backoff += 1;
     }
 
-    let _ = frame_to_string(&output_frame, &mut stream_buf);
-    // stream_buf.write(b"*2\r\n+PONG\r\n+PONG\r\n").unwrap();
-    println!(
-        "Respone {:?}",
-        String::from_utf8(stream_buf.buffer().to_vec()).unwrap()
-    );
-    stream_buf.flush().unwrap();
+    // let _ = frame_to_string(&output_frame, &mut stream_buf);
+    // // stream_buf.write(b"*2\r\n+PONG\r\n+PONG\r\n").unwrap();
+    // println!(
+    //     "Respone {:?}",
+    //     String::from_utf8(stream_buf.buffer().to_vec()).unwrap()
+    // );
+    // stream_buf.flush().unwrap();
 }
 
 fn frame_to_string<'a>(
@@ -109,7 +120,7 @@ fn frame_to_string<'a>(
             // let len = data.len() as u64;
             // write_decimal(dst, len)?;
             if String::from_utf8(data.to_vec()).unwrap().to_lowercase() == "ping".to_string() {
-                dst.write("+PONG".as_bytes())?;
+                dst.write(b"+PONG")?;
             } else {
                 dst.write(data)?;
             }
