@@ -105,19 +105,19 @@ fn frame_to_string<'a>(
             dst.write(b"\r\n")?;
         }
         Frame::Bulk(data) => {
-            dst.write(b"$")?;
-            let len = data.len() as u64;
-            write_decimal(dst, len)?;
+            // dst.write(b"$")?;
+            // let len = data.len() as u64;
+            // write_decimal(dst, len)?;
             if String::from_utf8(data.to_vec()).unwrap() == "ping".to_string() {
-                dst.write("pong".as_bytes())?;
+                dst.write("+PONG".as_bytes())?;
             } else {
                 dst.write(data)?;
             }
             dst.write(b"\r\n")?;
         }
         Frame::Array(list) => {
-            dst.write(b"*")?;
-            write_decimal(dst, list.len() as u64)?;
+            // dst.write(b"*")?;
+            // write_decimal(dst, list.len() as u64)?;
 
             for frame in list {
                 frame_to_string(&frame, dst)?;
