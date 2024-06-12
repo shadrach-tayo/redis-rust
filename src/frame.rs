@@ -12,36 +12,36 @@ pub const TERMINATOR: &str = "\r\n";
 
 #[allow(unused)]
 #[derive(Debug)]
-pub enum Frame {
+pub enum RESP {
     Simple(String),
     Error(String),
     Integer(u64),
     Bulk(Bytes),
     Null,
-    Array(Vec<Frame>),
+    Array(Vec<RESP>),
 }
 
-pub type Error = Box<dyn std::error::Error + Send + Sync>;
-pub enum FrameError {
+#[derive(Debug)]
+pub enum RESPError {
     Incomplete,
     Other(crate::Error),
 }
 
-impl Frame {
+impl RESP {
     /// Returns an empty array
-    pub fn array() -> Frame {
-        Frame::Array(vec![])
+    pub fn array() -> RESP {
+        RESP::Array(vec![])
     }
 
     /// Parse the message from the client
-    pub fn parse_frame(cursor: &mut Cursor<&[u8]>) -> Result<Frame, FrameError> {
+    pub fn parse_frame(cursor: &mut Cursor<&[u8]>) -> Result<RESP, RESPError> {
         match get_u8(cursor)? {
             b'+' => {
                 // strings data type
                 let line = get_line(cursor)?.to_vec();
                 let string = String::from_utf8(line)?;
                 // println!("parse string {}", &string);
-                Ok(Frame::Simple(string))
+                Ok(RESP::Simple(string))
             }
             b'*' => {
                 // list data type
@@ -50,7 +50,7 @@ impl Frame {
                 for _ in 0..len {
                     out.push(Self::parse_frame(cursor)?);
                 }
-                Ok(Frame::Array(out))
+                Ok(RESP::Array(out))
             }
             b'$' => {
                 // bulk strings data type
@@ -59,35 +59,35 @@ impl Frame {
                     if line != b"-1" {
                         return Err("Invalid input format.".into());
                     }
-                    Ok(Frame::Null)
+                    Ok(RESP::Null)
                 } else {
                     let len = get_decimal(cursor)?.try_into()?;
                     let n = len + 2;
                     if cursor.remaining() < n {
-                        return Err(FrameError::Incomplete);
+                        return Err(RESPError::Incomplete);
                     }
                     let data = Bytes::copy_from_slice(&cursor.chunk()[..len]);
 
                     // skip that number of bytes + 2
                     skip(cursor, n)?;
 
-                    Ok(Frame::Bulk(data))
+                    Ok(RESP::Bulk(data))
                 }
             }
             b':' => {
                 // integer data type (u64)
                 let int = get_decimal(cursor)?;
-                Ok(Frame::Integer(int))
+                Ok(RESP::Integer(int))
             }
             b'-' => {
                 // simple errors data type
                 let error = get_line(cursor)?.to_vec();
                 let string = String::from_utf8(error)?;
-                Ok(Frame::Error(string))
+                Ok(RESP::Error(string))
             }
             b'_' => {
                 // null data type
-                Ok(Frame::Null)
+                Ok(RESP::Null)
             }
             raw => Err(format!("Invalid frame type byte `{}`", raw).into()),
         }
@@ -95,7 +95,7 @@ impl Frame {
 
     #[allow(unused)]
     /// Validate if a message can be decoded from the `src`
-    pub fn check_frame(src: &mut Cursor<&[u8]>) -> Result<(), FrameError> {
+    pub fn check_frame(src: &mut Cursor<&[u8]>) -> Result<(), RESPError> {
         match get_u8(src)? {
             b'+' => {
                 // strings frame
@@ -128,24 +128,24 @@ impl Frame {
 }
 
 pub fn frame_to_string(
-    frame: &Frame,
+    frame: &RESP,
     dst: &mut BufWriter<&mut TcpStream>,
 ) -> Result<(), std::io::Error> {
     match frame {
-        Frame::Null => {
+        RESP::Null => {
             dst.write_all(b"$-1\r\n")?;
         }
-        Frame::Error(error) => {
+        RESP::Error(error) => {
             dst.write_all(b"-")?;
             dst.write_all(error.as_bytes())?;
             dst.write_all(b"\r\n")?;
         }
-        Frame::Simple(string) => {
+        RESP::Simple(string) => {
             dst.write_all(b"+")?;
             dst.write_all(string.as_bytes())?;
             dst.write_all(b"\r\n")?;
         }
-        Frame::Bulk(data) => {
+        RESP::Bulk(data) => {
             dst.write_all(b"$")?;
             let len = data.len() as u64;
             write_decimal(dst, len)?;
@@ -158,7 +158,7 @@ pub fn frame_to_string(
 
             dst.write_all(b"\r\n")?;
         }
-        Frame::Array(list) => {
+        RESP::Array(list) => {
             dst.write_all(b"*")?;
             write_decimal(dst, list.len() as u64)?;
 
@@ -166,7 +166,7 @@ pub fn frame_to_string(
                 frame_to_string(frame, dst)?;
             }
         }
-        Frame::Integer(int) => {
+        RESP::Integer(int) => {
             dst.write_all(b":")?;
             write_decimal(dst, *int)?;
         }
@@ -175,7 +175,7 @@ pub fn frame_to_string(
     Ok(())
 }
 
-pub fn get_line<'a>(src: &'a mut Cursor<&[u8]>) -> Result<&'a [u8], FrameError> {
+pub fn get_line<'a>(src: &'a mut Cursor<&[u8]>) -> Result<&'a [u8], RESPError> {
     // println!("parse line");
     let start = src.position() as usize;
     let end = src.get_ref().len() - 1;
@@ -188,26 +188,26 @@ pub fn get_line<'a>(src: &'a mut Cursor<&[u8]>) -> Result<&'a [u8], FrameError> 
         }
     }
 
-    Err(FrameError::Incomplete)
+    Err(RESPError::Incomplete)
 }
 
-pub fn peak_u8(src: &mut Cursor<&[u8]>) -> Result<u8, FrameError> {
+pub fn peak_u8(src: &mut Cursor<&[u8]>) -> Result<u8, RESPError> {
     if !src.has_remaining() {
-        return Err(FrameError::Incomplete);
+        return Err(RESPError::Incomplete);
     }
     let peak = src.chunk()[0];
     Ok(peak)
 }
 
-pub fn get_u8(src: &mut Cursor<&[u8]>) -> Result<u8, FrameError> {
+pub fn get_u8(src: &mut Cursor<&[u8]>) -> Result<u8, RESPError> {
     if !src.has_remaining() {
-        return Err(FrameError::Incomplete);
+        return Err(RESPError::Incomplete);
     }
 
     Ok(src.get_u8())
 }
 
-pub fn get_decimal(src: &mut Cursor<&[u8]>) -> Result<u64, FrameError> {
+pub fn get_decimal(src: &mut Cursor<&[u8]>) -> Result<u64, RESPError> {
     let line = get_line(src)?.to_vec();
     let string = String::from_utf8(line)?;
     let int: u64 = string.parse().unwrap();
@@ -228,40 +228,42 @@ pub fn write_decimal(dst: &mut BufWriter<&mut TcpStream>, val: u64) -> io::Resul
     Ok(())
 }
 
-pub fn skip(src: &mut Cursor<&[u8]>, n: usize) -> Result<(), FrameError> {
+pub fn skip(src: &mut Cursor<&[u8]>, n: usize) -> Result<(), RESPError> {
     src.advance(n);
     Ok(())
 }
 
-impl From<String> for FrameError {
+impl From<String> for RESPError {
     fn from(value: String) -> Self {
-        FrameError::Other(value.into())
+        RESPError::Other(value.into())
     }
 }
 
-impl From<&str> for FrameError {
+impl From<&str> for RESPError {
     fn from(value: &str) -> Self {
         value.to_string().into()
     }
 }
 
-impl From<FromUtf8Error> for FrameError {
+impl From<FromUtf8Error> for RESPError {
     fn from(_value: FromUtf8Error) -> Self {
         "Invalid frame format".into()
     }
 }
 
-impl From<TryFromIntError> for FrameError {
+impl From<TryFromIntError> for RESPError {
     fn from(_value: TryFromIntError) -> Self {
         "Invalid frame format".into()
     }
 }
 
-impl fmt::Display for FrameError {
+impl fmt::Display for RESPError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            FrameError::Incomplete => "stream ended early".fmt(fmt),
-            FrameError::Other(err) => err.fmt(fmt),
+            RESPError::Incomplete => "stream ended early".fmt(fmt),
+            RESPError::Other(err) => err.fmt(fmt),
         }
     }
 }
+
+impl std::error::Error for RESPError {}
