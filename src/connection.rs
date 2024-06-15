@@ -50,6 +50,10 @@ impl Connection {
     /// Attempts to parse bytes from the buffered connection
     /// stream to a `RESP` data structure for processing
     pub fn parse_frame(&mut self) -> crate::Result<Option<RESP>> {
+        println!(
+            "Incoming Buffer {:?}",
+            String::from_utf8(self.buffer.clone().to_vec())
+        );
         let mut cursor = Cursor::new(&self.buffer[..]);
 
         match RESP::parse_frame(&mut cursor) {
@@ -78,6 +82,10 @@ impl Connection {
             _ => self.write_value(frame).await?,
         }
 
+        println!(
+            "Outgoing Buffer: {:?}",
+            String::from_utf8(self.stream.buffer().to_vec())
+        );
         self.stream.flush().await
     }
 

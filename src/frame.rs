@@ -33,6 +33,30 @@ impl RESP {
         RESP::Array(vec![])
     }
 
+    /// Push a `bulk` resp into an array.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self` is not an array
+    pub fn push_bulk(&mut self, bytes: Bytes) {
+        match self {
+            RESP::Array(vec) => vec.push(RESP::Bulk(bytes)),
+            _ => panic!("Not `RESP::Array`"),
+        }
+    }
+
+    /// Push an `integer` resp into an array.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self` is not an array
+    pub fn push_int(&mut self, value: u64) {
+        match self {
+            RESP::Array(vec) => vec.push(RESP::Integer(value)),
+            _ => panic!("Not `RESP::Array`"),
+        }
+    }
+
     /// Parse the message from the client
     pub fn parse_frame(cursor: &mut Cursor<&[u8]>) -> Result<RESP, RESPError> {
         match get_u8(cursor)? {

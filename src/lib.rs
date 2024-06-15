@@ -1,8 +1,11 @@
+pub mod command;
 pub mod connection;
 pub mod frame;
 pub mod server;
 
 pub use frame::{frame_to_string, RESPError};
+
+pub use command::*;
 
 /// Error returned from most functions
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

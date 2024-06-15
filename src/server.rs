@@ -21,7 +21,7 @@ use tokio::{
     time,
 };
 
-use crate::connection::Connection;
+use crate::{connection::Connection, Command};
 
 #[derive(Debug)]
 pub struct Listener {
@@ -107,11 +107,11 @@ impl Handler {
         // parse RESP from connection
         let resp = self.connection.read_resp().await?;
         println!("Input RESP parsed {:?}", &resp);
-        if let Some(_resp) = resp {
+        if let Some(resp) = resp {
             // Map RESP to a Command
-            // let command = Command::from_resp(resp)?;
+            let command = Command::from_resp(resp)?;
             // Run Command and write result RESP to stream
-            // command.apply(..).await?;
+            command.apply(&mut self.connection).await?;
         }
         Ok(())
     }
