@@ -28,7 +28,7 @@ impl Command {
 
         let command = match command_name.as_str() {
             "echo" => Command::Echo(Echo::from_parts(&mut resp_reader)?),
-            // "ping" => todo!(),
+            "ping" => Command::Ping(Ping::from_parts(&mut resp_reader)?),
             _ => unimplemented!(), // Err("Unsupported command".into()),
         };
 
@@ -48,6 +48,7 @@ impl Command {
 
         match self {
             Echo(command) => command.apply(dst).await,
+            Ping(command) => command.apply(dst).await,
             _ => unimplemented!(),
         }
     }

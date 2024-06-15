@@ -30,7 +30,7 @@ impl Echo {
     /// Apply the echo command and write to the Tcp connection stream
     pub async fn apply(self, dst: &mut Connection) -> crate::Result<()> {
         let resp = match self.msg {
-            Some(msg) => RESP::Bulk(Bytes::from(msg)),
+            Some(msg) => RESP::Bulk(msg),
             None => RESP::Simple("".to_string()),
         };
 
