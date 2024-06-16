@@ -40,10 +40,7 @@ pub struct Connection {
 /// Write RESP to tcp stream
 impl Connection {
     pub fn new(stream: TcpStream) -> Connection {
-        // let socket = Rc::new(socket);
-        // let clone = Rc::clone(&socket);
         Connection {
-            // stream: BufWriter::new(socket),
             stream,
             buffer: BytesMut::with_capacity(4096),
             idle_close: Duration::from_secs(10),
@@ -56,17 +53,11 @@ impl Connection {
     pub async fn read_resp(&mut self) -> crate::Result<Option<RESP>> {
         let size = self.stream.read_buf(&mut self.buffer).await?;
 
-        println!("Read buffer {:?}", size);
         if size == 0 {
             return Ok(None);
-            // if self.buffer.is_empty() {
-            // } else {
-            //     return Err("Connection was abruptly closed".into());
-            // }
         }
 
         let resp = self.parse_frame()?;
-        println!("Finished reading buffer ");
         Ok(resp)
     }
 
