@@ -121,17 +121,13 @@ impl Handler {
                 // Run Command and write result RESP to stream
                 command.apply(&mut self.connection, &self.db).await?;
             } else {
-                // break close connection
-                // break;
+                // close connection
+                break;
             }
 
             // check if connection idle time is passed and close connection
             let elasped = self.connection.last_active_time.unwrap();
             let elasped = elasped.elapsed();
-            // println!(
-            //     "Elasped time {:?}, Idle window: {:?}",
-            //     elasped, self.connection.idle_close
-            // );
             if elasped > self.connection.idle_close {
                 println!("Idle time elasped {:?}", elasped);
                 // break;

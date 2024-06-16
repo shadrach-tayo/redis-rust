@@ -1,4 +1,5 @@
 pub mod echo;
+pub mod get;
 pub mod ping;
 pub mod set;
 pub mod unknown;
@@ -7,9 +8,10 @@ use std::vec;
 
 use bytes::Bytes;
 use echo::Echo;
-pub use ping::Ping;
+use get::Get;
+use ping::Ping;
 use set::Set;
-pub use unknown::Unknown;
+use unknown::Unknown;
 
 use crate::{connection::Connection, frame::RESP, Db};
 
@@ -20,6 +22,7 @@ pub enum Command {
     Echo(Echo),
     Unknown(Unknown),
     Set(Set),
+    Get(Get),
 }
 
 impl Command {
@@ -36,6 +39,7 @@ impl Command {
             "echo" => Command::Echo(Echo::from_parts(&mut resp_reader)?),
             "ping" => Command::Ping(Ping::from_parts(&mut resp_reader)?),
             "set" => Command::Set(Set::from_parts(&mut resp_reader)?),
+            "get" => Command::Get(Get::from_parts(&mut resp_reader)?),
             _ => panic!("Unexpected command"), // return Ok(Command::Unknown(Unknown::new(command_name))),
         };
 
@@ -59,6 +63,7 @@ impl Command {
             Ping(command) => command.apply(dst).await,
             Unknown(command) => command.apply(dst).await,
             Set(command) => command.apply(&db, dst).await,
+            Get(command) => command.apply(&db, dst).await,
             // _ => unimplemented!(),
         }
     }
@@ -68,6 +73,7 @@ impl Command {
             Command::Echo(_) => "echo",
             Command::Ping(_) => "ping",
             Command::Set(_) => "set",
+            Command::Get(_) => "get",
             Command::Unknown(command) => command.get_name(),
         }
     }

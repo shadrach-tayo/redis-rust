@@ -72,6 +72,7 @@ impl Connection {
 
         match RESP::parse_frame(&mut cursor) {
             Ok(resp) => {
+                let _ = self.buffer.split();
                 return Ok(Some(resp));
             }
             // Not enough data present to parse a RESP
@@ -96,10 +97,7 @@ impl Connection {
             _ => self.write_value(frame).await?,
         }
 
-        // println!(
-        //     "Outgoing Buffer: {:?}",
-        //     String::from_utf8(self.stream.buffer().to_vec())
-        // );
+        println!("Outgoing Buffer: {:?}", frame);
         self.stream.flush().await
     }
 

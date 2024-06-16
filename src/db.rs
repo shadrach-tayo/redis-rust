@@ -3,7 +3,6 @@ use std::{
     sync::{Arc, Mutex},
     time::{self, Duration, Instant},
 };
-use tokio;
 
 use bytes::Bytes;
 
@@ -37,6 +36,7 @@ pub struct State {
     entries: HashMap<String, Entry>,
 
     // Unique entries of expiration time sorted by time
+    #[allow(unused)]
     expirations: BTreeSet<(Instant, String)>,
 }
 
@@ -46,6 +46,7 @@ struct Entry {
     data: Bytes,
 
     // optional expiration duration of the data stored
+    #[allow(unused)]
     expires_at: Option<Instant>,
 }
 
@@ -107,7 +108,7 @@ impl Db {
         });
 
         // Insert key value entry into store
-        let prev = state.entries.insert(
+        let _prev = state.entries.insert(
             key.clone(),
             Entry {
                 data: value,
@@ -117,19 +118,19 @@ impl Db {
 
         // if the key exist, remove the entry
 
-        if let Some(prev) = prev {
-            state.entries.remove(&key);
+        // if let Some(prev) = prev {
+        //     state.entries.remove(&key);
 
-            if let Some(expires_at) = prev.expires_at {
-                state.expirations.remove(&(expires_at, key.clone()));
-            }
-        };
+        //     if let Some(expires_at) = prev.expires_at {
+        //         state.expirations.remove(&(expires_at, key.clone()));
+        //     }
+        // };
 
-        // insert expires_at into expiration tracker
-        // when key expires it'll automatically be removed later
-        if let Some(expiry) = expiry {
-            state.expirations.insert((expiry, key.clone()));
-        }
+        // // insert expires_at into expiration tracker
+        // // when key expires it'll automatically be removed later
+        // if let Some(expiry) = expiry {
+        //     state.expirations.insert((expiry, key.clone()));
+        // }
 
         drop(state);
     }
