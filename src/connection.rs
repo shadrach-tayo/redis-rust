@@ -1,8 +1,11 @@
-use std::io::{self, Cursor};
+use std::{
+    io::{self, Cursor},
+    time::{Duration, Instant},
+};
 
 use bytes::BytesMut;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufWriter},
+    io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
 
@@ -12,39 +15,59 @@ use crate::frame::RESP;
 /// to read
 #[derive(Debug)]
 pub struct Connection {
+    /// A self reference to the tcp connection
+    stream: TcpStream,
+
     /// Wrap incoming `TcpStream` with `BufWriter` to provide
     /// buffered writing to the socket
-    stream: BufWriter<TcpStream>,
+    // stream: BufWriter<TcpStream>,
 
     /// an in-memory buffer for holding RESP raw bytes for passing
     buffer: BytesMut,
+
+    /// Idle window allowed before closing the connection
+    pub idle_close: Duration,
+
+    /// last time the connection was active
+    /// i.e received a frame from the client
+    pub last_active_time: Option<Instant>,
+
+    ///
+    pub closed: bool,
 }
 
 /// Read bytes from tcpStream and convert to RESP for processing
 /// Write RESP to tcp stream
 impl Connection {
-    pub fn new(socket: TcpStream) -> Connection {
+    pub fn new(stream: TcpStream) -> Connection {
+        // let socket = Rc::new(socket);
+        // let clone = Rc::clone(&socket);
         Connection {
-            stream: BufWriter::new(socket),
+            // stream: BufWriter::new(socket),
+            stream,
             buffer: BytesMut::with_capacity(4096),
+            idle_close: Duration::from_secs(10),
+            closed: false,
+            last_active_time: None,
         }
     }
 
     /// Read a single RESP from the connection stream
     pub async fn read_resp(&mut self) -> crate::Result<Option<RESP>> {
-        loop {
-            if let Some(resp) = self.parse_frame()? {
-                return Ok(Some(resp));
-            }
+        let size = self.stream.read_buf(&mut self.buffer).await?;
 
-            if self.stream.read_buf(&mut self.buffer).await? == 0 {
-                if self.buffer.is_empty() {
-                    return Ok(None);
-                } else {
-                    return Err("Connection was abruptly closed".into());
-                }
-            }
+        println!("Read buffer {:?}", size);
+        if size == 0 {
+            return Ok(None);
+            // if self.buffer.is_empty() {
+            // } else {
+            //     return Err("Connection was abruptly closed".into());
+            // }
         }
+
+        let resp = self.parse_frame()?;
+        println!("Finished reading buffer ");
+        Ok(resp)
     }
 
     /// Attempts to parse bytes from the buffered connection
@@ -82,10 +105,10 @@ impl Connection {
             _ => self.write_value(frame).await?,
         }
 
-        println!(
-            "Outgoing Buffer: {:?}",
-            String::from_utf8(self.stream.buffer().to_vec())
-        );
+        // println!(
+        //     "Outgoing Buffer: {:?}",
+        //     String::from_utf8(self.stream.buffer().to_vec())
+        // );
         self.stream.flush().await
     }
 

@@ -56,11 +56,13 @@ pub async fn run(listener: TcpListener) -> crate::Result<()> {
 /// Listner struct implementations
 impl Listener {
     pub async fn run(&mut self) -> crate::Result<()> {
-        println!("Listner is running");
+        // println!("Listner is running");
         loop {
             // accpet next tcp connection from client
             let stream = self.accept().await?;
-            println!("Connection accepted");
+
+            // let stream = Arc::new(stream);
+            // let stream = Arc::clone(&stream);
             let mut handler = Handler {
                 connection: Connection::new(stream),
             };
@@ -103,15 +105,36 @@ impl Handler {
     /// Request RESP are parsed from the socket buffer and processed using `Command`
     /// Response is written back to the socket
     pub async fn run(&mut self) -> crate::Result<()> {
-        println!("Connecton Handler is running");
-        // parse RESP from connection
-        let resp = self.connection.read_resp().await?;
-        println!("Input RESP parsed {:?}", &resp);
-        if let Some(resp) = resp {
-            // Map RESP to a Command
-            let command = Command::from_resp(resp)?;
-            // Run Command and write result RESP to stream
-            command.apply(&mut self.connection).await?;
+        while !self.connection.closed {
+            // parse RESP from connection
+            let resp = self.connection.read_resp().await?;
+
+            if let Some(resp) = resp {
+                // update connection last active time
+                self.connection.last_active_time = Some(std::time::Instant::now());
+
+                // Map RESP to a Command
+                let command = Command::from_resp(resp)?;
+
+                // Run Command and write result RESP to stream
+                command.apply(&mut self.connection).await?;
+            } else {
+                // break close connection
+                // break;
+            }
+
+            // check if connection idle time is passed and close connection
+            let elasped = self.connection.last_active_time.unwrap();
+            let elasped = elasped.elapsed();
+            // println!(
+            //     "Elasped time {:?}, Idle window: {:?}",
+            //     elasped, self.connection.idle_close
+            // );
+            if elasped > self.connection.idle_close {
+                println!("Idle time elasped {:?}", elasped);
+                // break;
+                self.connection.closed = true;
+            }
         }
         Ok(())
     }

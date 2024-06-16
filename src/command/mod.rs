@@ -1,11 +1,13 @@
 pub mod echo;
 pub mod ping;
+pub mod unknown;
 
 use std::vec;
 
 use bytes::Bytes;
 use echo::Echo;
 pub use ping::Ping;
+pub use unknown::Unknown;
 
 use crate::{connection::Connection, frame::RESP};
 
@@ -14,6 +16,7 @@ use crate::{connection::Connection, frame::RESP};
 pub enum Command {
     Ping(Ping),
     Echo(Echo),
+    Unknown(Unknown),
 }
 
 impl Command {
@@ -29,10 +32,11 @@ impl Command {
         let command = match command_name.as_str() {
             "echo" => Command::Echo(Echo::from_parts(&mut resp_reader)?),
             "ping" => Command::Ping(Ping::from_parts(&mut resp_reader)?),
-            _ => unimplemented!(), // Err("Unsupported command".into()),
+            _ => panic!("Unexpected command"), // return Ok(Command::Unknown(Unknown::new(command_name))),
         };
 
-        dbg!(&command);
+        // dbg!(&command);
+
         // Check if reader has been consumed, if not return an Error
         // to alert protocol of unexpected frame format
         resp_reader.finish()?;
@@ -49,7 +53,8 @@ impl Command {
         match self {
             Echo(command) => command.apply(dst).await,
             Ping(command) => command.apply(dst).await,
-            _ => unimplemented!(),
+            Unknown(command) => command.apply(dst).await,
+            // _ => unimplemented!(),
         }
     }
 
@@ -57,6 +62,7 @@ impl Command {
         match self {
             Command::Echo(_) => "echo",
             Command::Ping(_) => "ping",
+            Command::Unknown(command) => command.get_name(),
         }
     }
 }

@@ -239,7 +239,7 @@ pub fn get_decimal(src: &mut Cursor<&[u8]>) -> Result<u64, RESPError> {
 }
 
 pub fn write_decimal(dst: &mut BufWriter<&mut TcpStream>, val: u64) -> io::Result<()> {
-    use std::io::Write;
+    // use std::io::Write;
     let mut buf = [0u8, 20];
     let mut buf = Cursor::new(&mut buf[..]);
 
