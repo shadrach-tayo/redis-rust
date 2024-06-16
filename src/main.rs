@@ -1,6 +1,6 @@
 // Uncomment this block to pass the first stage
 
-use redis_starter_rust::{server::Listener, Error};
+use redis_starter_rust::{server::Listener, DbGuard, Error};
 use tokio::net::TcpListener;
 
 // todo: implement command
@@ -15,7 +15,8 @@ async fn main() -> Result<(), Error> {
     // let mut handles = vec![];
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
 
-    let mut server = Listener { listener };
+    let db = DbGuard::new();
+    let mut server = Listener { listener, db };
 
     tokio::select! {
         result = server.run() => {

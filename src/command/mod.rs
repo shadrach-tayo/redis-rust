@@ -1,5 +1,6 @@
 pub mod echo;
 pub mod ping;
+pub mod set;
 pub mod unknown;
 
 use std::vec;
@@ -7,9 +8,10 @@ use std::vec;
 use bytes::Bytes;
 use echo::Echo;
 pub use ping::Ping;
+use set::Set;
 pub use unknown::Unknown;
 
-use crate::{connection::Connection, frame::RESP};
+use crate::{connection::Connection, frame::RESP, Db};
 
 /// Enum of supported Protocol Commands
 #[derive(Debug)]
@@ -17,6 +19,7 @@ pub enum Command {
     Ping(Ping),
     Echo(Echo),
     Unknown(Unknown),
+    Set(Set),
 }
 
 impl Command {
@@ -32,6 +35,7 @@ impl Command {
         let command = match command_name.as_str() {
             "echo" => Command::Echo(Echo::from_parts(&mut resp_reader)?),
             "ping" => Command::Ping(Ping::from_parts(&mut resp_reader)?),
+            "set" => Command::Set(Set::from_parts(&mut resp_reader)?),
             _ => panic!("Unexpected command"), // return Ok(Command::Unknown(Unknown::new(command_name))),
         };
 
@@ -47,13 +51,14 @@ impl Command {
     /// Apply the command
     ///
     /// The response is written to the dst connection.
-    pub async fn apply(self, dst: &mut Connection) -> crate::Result<()> {
+    pub async fn apply(self, dst: &mut Connection, db: &Db) -> crate::Result<()> {
         use Command::*;
 
         match self {
             Echo(command) => command.apply(dst).await,
             Ping(command) => command.apply(dst).await,
             Unknown(command) => command.apply(dst).await,
+            Set(command) => command.apply(&db, dst).await,
             // _ => unimplemented!(),
         }
     }
@@ -62,6 +67,7 @@ impl Command {
         match self {
             Command::Echo(_) => "echo",
             Command::Ping(_) => "ping",
+            Command::Set(_) => "set",
             Command::Unknown(command) => command.get_name(),
         }
     }

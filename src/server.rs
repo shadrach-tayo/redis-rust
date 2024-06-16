@@ -21,11 +21,12 @@ use tokio::{
     time,
 };
 
-use crate::{connection::Connection, Command};
+use crate::{connection::Connection, Command, Db, DbGuard};
 
 #[derive(Debug)]
 pub struct Listener {
     // db => database guard
+    pub db: DbGuard,
 
     // Tcp listner
     pub listener: TcpListener,
@@ -33,7 +34,7 @@ pub struct Listener {
 
 pub struct Handler {
     // database reference
-    // db: Db
+    db: Db,
     /// The TCP connection instrumented with RESP encoder and decoder
     /// uses a buffered `TcpStream`
     ///
@@ -65,6 +66,7 @@ impl Listener {
             // let stream = Arc::clone(&stream);
             let mut handler = Handler {
                 connection: Connection::new(stream),
+                db: self.db.db(),
             };
 
             tokio::spawn(async move {
@@ -117,7 +119,7 @@ impl Handler {
                 let command = Command::from_resp(resp)?;
 
                 // Run Command and write result RESP to stream
-                command.apply(&mut self.connection).await?;
+                command.apply(&mut self.connection, &self.db).await?;
             } else {
                 // break close connection
                 // break;
