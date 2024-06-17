@@ -1,3 +1,5 @@
+use tokio::time::Duration;
+
 use bytes::Bytes;
 
 use crate::{connection::Connection, frame::RESP, Db, RespReader, RespReaderError};
@@ -10,13 +12,13 @@ pub struct Set {
     // value to store in db
     value: Bytes,
     // expiration time of key
-    // ex: Option<Duration>
+    expire: Option<Duration>,
 }
 
 impl Set {
     /// contruct new Set command
-    pub fn new(key: String, value: Bytes) -> Self {
-        Set { key, value }
+    pub fn new(key: String, value: Bytes, expire: Option<Duration>) -> Self {
+        Set { key, value, expire }
     }
 
     /// Construct new Set command by consuming the RespReader
@@ -30,13 +32,41 @@ impl Set {
 
         let value = reader.next_byte()?;
 
-        Ok(Set { key, value })
+        let mut expire = None;
+
+        match reader.next_string() {
+            // parse PX argument to SET command
+            Ok(s) if s.to_lowercase() == "px" => {
+                let duration = reader.next_int()?;
+                println!("Duration {:?}", duration);
+                let duration = Duration::from_millis(duration);
+                println!("Duration {:?}", duration);
+                expire = Some(duration);
+            }
+
+            // parse EX argument to SET command
+            Ok(s) if s.to_lowercase() == "ex" => {
+                let duration = reader.next_int().map(|dur| Duration::from_secs(dur))?;
+                expire = Some(duration);
+            }
+            Ok(arg) => {
+                return Err(RespReaderError::Other(format!(
+                    "Unsupported argument to SET: {}",
+                    arg
+                )))
+            }
+            Err(_) => {}
+        }
+
+        println!("Expire {:?}", expire);
+
+        Ok(Set { key, value, expire })
     }
 
     /// Apply the echo command and write to the Tcp connection stream
     pub async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<()> {
         // set the value in the shared cache.
-        db.set(self.key, self.value, None);
+        db.set(self.key, self.value, self.expire);
 
         // write the OK response to the client connection buffer
         dst.write_frame(&RESP::Simple("OK".into())).await?;

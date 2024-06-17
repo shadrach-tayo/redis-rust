@@ -172,12 +172,13 @@ impl RespReader {
 }
 
 pub fn convert_bytes_to_u64(bytes: bytes::Bytes) -> Result<u64, String> {
-    // bytes.len();
-    // convert_string_to_u64(String::from_utf8(bytes.to_vec())?)
-    let mut buf = [0u8; 8];
-    let len = 8.min(bytes.len());
-    buf[..len].copy_from_slice(&bytes[..len]);
-    Ok(u64::from_be_bytes(buf))
+    let int = String::from_utf8(bytes.to_vec())
+        .map_err(|_| "Cannot parse u64 from bytes".to_string())?
+        .parse::<u64>()
+        .map_err(|_| "Cannot parse u64 from bytes".to_string())?;
+
+    println!("U64 value {:?}", int);
+    Ok(int)
 }
 
 pub fn convert_string_to_u64(string: String) -> Result<u64, String> {
