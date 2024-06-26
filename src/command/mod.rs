@@ -1,5 +1,6 @@
 pub mod echo;
 pub mod get;
+pub mod info;
 pub mod ping;
 pub mod set;
 pub mod unknown;
@@ -9,6 +10,7 @@ use std::vec;
 use bytes::Bytes;
 use echo::Echo;
 use get::Get;
+use info::Info;
 use ping::Ping;
 use set::Set;
 use unknown::Unknown;
@@ -23,6 +25,7 @@ pub enum Command {
     Unknown(Unknown),
     Set(Set),
     Get(Get),
+    Info(Info),
 }
 
 impl Command {
@@ -40,6 +43,7 @@ impl Command {
             "ping" => Command::Ping(Ping::from_parts(&mut resp_reader)?),
             "set" => Command::Set(Set::from_parts(&mut resp_reader)?),
             "get" => Command::Get(Get::from_parts(&mut resp_reader)?),
+            "info" => Command::Info(Info::from_parts(&mut resp_reader)?),
             _ => panic!("Unexpected command"), // return Ok(Command::Unknown(Unknown::new(command_name))),
         };
 
@@ -64,8 +68,16 @@ impl Command {
             Unknown(command) => command.apply(dst).await,
             Set(command) => command.apply(&db, dst).await,
             Get(command) => command.apply(&db, dst).await,
-            // _ => unimplemented!(),
+            Info(command) => command.apply(&db, dst).await, // _ => unimplemented!(),
         }
+
+        // if command_response.is_err() {
+        //     let err = command_response.err().unwrap();
+        //     dst.write_frame(&RESP::Error(err.to_string())).await?;
+        //     Ok(())
+        // } else {
+        //     Ok(())
+        // }
     }
 
     pub fn get_name(&self) -> &str {
@@ -74,6 +86,7 @@ impl Command {
             Command::Ping(_) => "ping",
             Command::Set(_) => "set",
             Command::Get(_) => "get",
+            Command::Info(_) => "info",
             Command::Unknown(command) => command.get_name(),
         }
     }

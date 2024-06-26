@@ -1,12 +1,5 @@
-// Uncomment this block to pass the first stage
-
 use redis_starter_rust::{server::Listener, DbGuard, Error};
 use tokio::net::TcpListener;
-
-// todo: implement command
-// storage
-// connections
-// frames
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -15,7 +8,7 @@ async fn main() -> Result<(), Error> {
     // dispose file path
     let _ = args.next();
 
-    const MSG: &str = "Pass --port [port] argument to server";
+    const MSG: &str = "Pass --port <port> argument to start command";
 
     let port: u64 = match args.next() {
         Some(s) if s == "--port".to_string() => match args.next().unwrap().parse() {

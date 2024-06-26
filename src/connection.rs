@@ -97,7 +97,7 @@ impl Connection {
             _ => self.write_value(frame).await?,
         }
 
-        println!("Outgoing Buffer: {:?}", frame);
+        // println!("Outgoing Buffer: {:?}", frame);
         self.stream.flush().await
     }
 
