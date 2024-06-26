@@ -57,7 +57,10 @@ pub async fn run(listener: TcpListener) -> crate::Result<()> {
 /// Listner struct implementations
 impl Listener {
     pub async fn run(&mut self) -> crate::Result<()> {
-        // println!("Listner is running");
+        println!(
+            "Listner is running on port {:?}",
+            self.listener.local_addr()
+        );
         loop {
             // accpet next tcp connection from client
             let stream = self.accept().await?;

@@ -10,10 +10,28 @@ use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    println!("Logs from your program will appear here!");
-    // let mut handles = vec![];
-    let listener = TcpListener::bind("127.0.0.1:6379").await?;
+    let mut args = std::env::args();
+
+    // dispose file path
+    let _ = args.next();
+
+    const MSG: &str = "Pass --port [port] argument to server";
+
+    let port: u64 = match args.next() {
+        Some(s) if s == "--port".to_string() => match args.next().unwrap().parse() {
+            Ok(int) => int,
+            Err(_) => panic!("Could not parse "),
+        },
+        Some(s) => {
+            println!("arg {}", s);
+            panic!("Invalid arg: {} passed to server, {}", s, MSG)
+        }
+        None => 6379,
+    };
+
+    let addr = format!("127.0.0.1:{}", port);
+
+    let listener = TcpListener::bind(addr).await?;
 
     let db = DbGuard::new();
     let mut server = Listener { listener, db };
@@ -29,68 +47,3 @@ async fn main() -> Result<(), Error> {
         }
     }
 }
-
-// fn handle_connections(mut stream: TcpStream) {
-//     let mut reader = BufReader::new(stream.try_clone().unwrap());
-//     let mut stream_buf = BufWriter::new(&mut stream);
-//     // let mut temp_buf = Vec::with_capacity(4 * 1024);
-//     let mut backoff = 1;
-//     // let mut string = String::from("");
-
-//     let mut output_frame: RESP = RESP::Null;
-//     let mut buf = [0; 4 * 1024];
-//     loop {
-//         let mut cursor = Cursor::new(&buf[..]);
-//         let frame_result = RESP::parse_frame(&mut cursor);
-//         match frame_result {
-//             Ok(frame) => {
-//                 output_frame = frame;
-//                 println!("Parsed frame: {:?}", &output_frame);
-//                 break;
-//             }
-//             Err(err) => {
-//                 println!("Error parsing frames {}", err);
-//             }
-//         }
-
-//         match reader.read(&mut buf) {
-//             Ok(size) => {
-//                 println!("Read size {}", size);
-//                 // println!("stream {:?}", string);
-
-//                 let buffer_len = reader.buffer().chunk().len();
-//                 println!(
-//                     "Buffer len: {:?}, loaded length {:?}",
-//                     reader.buffer().chunk().len(),
-//                     String::from_utf8(buf[..size].to_vec()).unwrap()
-//                 );
-//                 if buffer_len == 0 {
-//                     // let _ = &mut temp_buf
-//                     //     .write(string.bytes().collect::<Vec<u8>>().as_slice())
-//                     //     .unwrap();
-//                     // println!("Write size {write_size}");
-
-//                     // println!("Read stream bufferred {:?}", temp_buf.len());
-//                     println!("EOF");
-//                     // break;
-//                 }
-//             }
-//             Err(err) => {
-//                 println!("Error reading stream buffer {:?}", err);
-//             }
-//         }
-
-//         if backoff == 100 {
-//             break;
-//         }
-//         backoff += 1;
-//     }
-
-//     let _ = frame_to_string(&output_frame, &mut stream_buf);
-//     // stream_buf.write(b"*2\r\n+PONG\r\n+PONG\r\n").unwrap();
-//     println!(
-//         "Respone {:?}",
-//         String::from_utf8(stream_buf.buffer().to_vec()).unwrap()
-//     );
-//     stream_buf.flush().unwrap();
-// }

@@ -37,10 +37,7 @@ impl Set {
         match reader.next_string() {
             // parse PX argument to SET command
             Ok(s) if s.to_lowercase() == "px" => {
-                let duration = reader.next_int()?;
-                println!("Duration {:?}", duration);
-                let duration = Duration::from_millis(duration);
-                println!("Duration {:?}", duration);
+                let duration = reader.next_int().map(|dur| Duration::from_millis(dur))?;
                 expire = Some(duration);
             }
 

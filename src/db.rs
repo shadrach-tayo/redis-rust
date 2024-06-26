@@ -177,7 +177,7 @@ impl State {
     }
 }
 
-// TODO: Implement background task to remove expired keys from
+// TODO: Implement background task notifier and shutdown listner
 // the cache
 pub async fn purge_expired_keys(shared_db: Arc<SharedDb>) {
     // run a loop
