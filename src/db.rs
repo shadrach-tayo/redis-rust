@@ -5,6 +5,8 @@ use std::{
 };
 use tokio::time::{Duration, Instant};
 
+use crate::{ReplicaInfo, Role};
+
 /// Instantiates a single db and exposes multiple references
 /// of it to the server
 #[derive(Debug)]
@@ -37,6 +39,10 @@ pub struct State {
     // Unique entries of expiration time sorted by time
     #[allow(unused)]
     expirations: BTreeSet<(Instant, String)>,
+
+    role: Role,
+
+    replicas: HashMap<String, ReplicaInfo>,
 }
 
 #[derive(Debug)]
@@ -131,6 +137,37 @@ impl Db {
 
         drop(state);
     }
+
+    pub fn set_role(&self, role: Role) {
+        let mut state = self.inner.state.lock().unwrap();
+
+        let state = &mut *state;
+        println!("SET ROLE {}", role,);
+        state.role = role;
+        println!("ROLE: {}", state.role);
+
+        // drop(state);
+    }
+
+    pub fn set_master(&self, info: ReplicaInfo) {
+        let mut state = self.inner.state.lock().unwrap();
+
+        state.replicas.insert(info.key(), info);
+
+        drop(state);
+    }
+
+    pub fn get_role(&self) -> String {
+        let state = self.inner.state.lock().unwrap();
+
+        let role: String = state.role.to_string();
+
+        println!("GET ROLE {}", role);
+
+        drop(state);
+
+        role
+    }
 }
 
 impl SharedDb {
@@ -139,6 +176,8 @@ impl SharedDb {
             state: Mutex::new(State {
                 entries: HashMap::new(),
                 expirations: BTreeSet::new(),
+                role: Role::Master,
+                replicas: HashMap::new(),
             }),
         }
     }

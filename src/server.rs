@@ -21,7 +21,7 @@ use tokio::{
     time,
 };
 
-use crate::{connection::Connection, Command, Db, DbGuard};
+use crate::{connection::Connection, Command, Db, DbGuard, ReplicaInfo};
 
 #[derive(Debug)]
 pub struct Listener {
@@ -56,6 +56,15 @@ pub async fn run(listener: TcpListener) -> crate::Result<()> {
 
 /// Listner struct implementations
 impl Listener {
+    pub fn new(listener: TcpListener, db: DbGuard) -> Self {
+        Self { listener, db }
+    }
+
+    pub async fn set_master(&mut self, master: ReplicaInfo) {
+        self.db.db().set_role(crate::Role::Slave);
+        self.db.db().set_master(master);
+    }
+
     pub async fn run(&mut self) -> crate::Result<()> {
         println!(
             "Listner is running on port {:?}",

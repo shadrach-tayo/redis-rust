@@ -14,13 +14,13 @@ impl Info {
     }
 
     /// Apply the echo command and write to the Tcp connection stream
-    pub async fn apply(self, _db: &Db, dst: &mut Connection) -> crate::Result<()> {
+    pub async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<()> {
         // let resp = RESP::Bulk(Bytes::from("role:master"));
 
         // dbg!(&resp);
-
-        dst.write_frame(&RESP::Bulk(Bytes::from("role:master")))
-            .await?;
+        let role = db.get_role();
+        let resp = format!("role:{}", role);
+        dst.write_frame(&RESP::Bulk(Bytes::from(resp))).await?;
 
         Ok(())
     }
