@@ -22,6 +22,8 @@ async fn main() -> Result<(), Error> {
     if let Some(replica_info) = config.replica_info {
         println!("Replica info {:?}", &replica_info);
         server.set_master(replica_info).await;
+    } else {
+        server.init_repl_state();
     }
 
     tokio::select! {

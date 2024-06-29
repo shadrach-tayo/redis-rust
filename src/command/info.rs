@@ -15,12 +15,25 @@ impl Info {
 
     /// Apply the echo command and write to the Tcp connection stream
     pub async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<()> {
-        // let resp = RESP::Bulk(Bytes::from("role:master"));
-
         // dbg!(&resp);
         let role = db.get_role();
-        let resp = format!("role:{}", role);
-        dst.write_frame(&RESP::Bulk(Bytes::from(resp))).await?;
+        let mut data: String = "role:".to_owned();
+        data.push_str(role.as_str());
+        data.push_str("\r\n");
+
+        let repl_info = db.get_repl_info();
+        if repl_info.0.is_some() {
+            data.push_str("master_replid:");
+            data.push_str(repl_info.0.unwrap_or("".to_owned()).as_str());
+            data.push_str("\r\n");
+
+            data.push_str("master_repl_offset:");
+            data.push_str(repl_info.1.to_string().as_str());
+            data.push_str("\r\n");
+        }
+
+        let resp = RESP::Bulk(Bytes::from(data));
+        dst.write_frame(&resp).await?;
 
         Ok(())
     }

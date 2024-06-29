@@ -21,7 +21,7 @@ use tokio::{
     time,
 };
 
-use crate::{connection::Connection, Command, Db, DbGuard, ReplicaInfo};
+use crate::{connection::Connection, Command, Db, DbGuard, ReplicaInfo, Role};
 
 #[derive(Debug)]
 pub struct Listener {
@@ -58,6 +58,13 @@ pub async fn run(listener: TcpListener) -> crate::Result<()> {
 impl Listener {
     pub fn new(listener: TcpListener, db: DbGuard) -> Self {
         Self { listener, db }
+    }
+
+    pub fn init_repl_state(&mut self) {
+        self.db.db().set_role(Role::Master);
+        self.db
+            .db()
+            .set_repl_id("8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".into());
     }
 
     pub async fn set_master(&mut self, master: ReplicaInfo) {

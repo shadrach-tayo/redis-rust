@@ -40,8 +40,10 @@ pub struct State {
     #[allow(unused)]
     expirations: BTreeSet<(Instant, String)>,
 
+    // Replication state identifiers
     role: Role,
-
+    replid: Option<String>,
+    repl_offset: u64,
     replicas: HashMap<String, ReplicaInfo>,
 }
 
@@ -140,13 +142,14 @@ impl Db {
 
     pub fn set_role(&self, role: Role) {
         let mut state = self.inner.state.lock().unwrap();
-
         let state = &mut *state;
-        println!("SET ROLE {}", role,);
         state.role = role;
-        println!("ROLE: {}", state.role);
+    }
 
-        // drop(state);
+    pub fn set_repl_id(&self, replid: String) {
+        let mut state = self.inner.state.lock().unwrap();
+        let state = &mut *state;
+        state.replid = Some(replid);
     }
 
     pub fn set_master(&self, info: ReplicaInfo) {
@@ -168,6 +171,17 @@ impl Db {
 
         role
     }
+
+    pub fn get_repl_info(&self) -> (Option<String>, u64) {
+        let state = self.inner.state.lock().unwrap();
+
+        let replid = state.replid.clone();
+        let repl_offset = state.repl_offset.clone();
+
+        drop(state);
+
+        (replid, repl_offset)
+    }
 }
 
 impl SharedDb {
@@ -178,6 +192,8 @@ impl SharedDb {
                 expirations: BTreeSet::new(),
                 role: Role::Master,
                 replicas: HashMap::new(),
+                replid: None,
+                repl_offset: 0,
             }),
         }
     }
