@@ -131,8 +131,14 @@ impl Listener {
         psync_resp.push_bulk(Bytes::from("-1"));
         connection.write_frame(&psync_resp).await?;
 
+        // let _ = time::sleep(Duration::from_millis(50));
+        let _ = connection.read_resp().await?;
+
+        // read empty db files
         let _ = time::sleep(Duration::from_millis(50));
         let _ = connection.read_resp().await?;
+        // let mut resp_reader = RespReader::new(response.unwrap())?;
+        // assert_eq!(resp_reader.next_string()?, EMPTY_DB_FILE);
 
         self.db.db().set_role(crate::Role::Slave);
         self.db.db().set_master(master);

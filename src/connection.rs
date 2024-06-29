@@ -103,6 +103,20 @@ impl Connection {
     }
 
     /// Write a single `RESP` value to the underlying connection stream
+    pub async fn write_raw_bytes(&mut self, data: Vec<u8>) -> io::Result<()> {
+        println!("Write raw {:?}", &data);
+        // println!("Outgoing Buffer: {:?}", frame);
+        // let len = data.len();
+        // self.stream.write(b"$").await?;
+        // self.stream.write(data.len().to_string().as_bytes()).await?;
+        self.stream
+            .write(format!("${}\r\n", data.len()).as_bytes())
+            .await?;
+        self.stream.write_all(&data).await?;
+        self.stream.flush().await
+    }
+
+    /// Write a single `RESP` value to the underlying connection stream
     async fn write_value(&mut self, frame: &RESP) -> io::Result<()> {
         match frame {
             RESP::Null => {
@@ -130,8 +144,8 @@ impl Connection {
                 // if String::from_utf8(data.to_vec()).unwrap().to_lowercase() == "ping" {
                 //     self.stream.write_all(b"PONG").await?;
                 // } else {
-                self.stream.write_all(data).await?;
                 // }
+                self.stream.write_all(data).await?;
 
                 self.stream.write_all(b"\r\n").await?;
             }
