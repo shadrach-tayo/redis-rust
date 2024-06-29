@@ -16,12 +16,13 @@
 
 use std::time::Duration;
 
+use bytes::Bytes;
 use tokio::{
     net::{TcpListener, TcpStream},
     time,
 };
 
-use crate::{connection::Connection, Command, Db, DbGuard, ReplicaInfo, Role};
+use crate::{connection::Connection, frame::RESP, Command, Db, DbGuard, ReplicaInfo, Role};
 
 #[derive(Debug)]
 pub struct Listener {
@@ -30,6 +31,7 @@ pub struct Listener {
 
     // Tcp listner
     pub listener: TcpListener,
+    pub master_connection: Option<Connection>,
 }
 
 pub struct Handler {
@@ -57,7 +59,11 @@ pub async fn run(listener: TcpListener) -> crate::Result<()> {
 /// Listner struct implementations
 impl Listener {
     pub fn new(listener: TcpListener, db: DbGuard) -> Self {
-        Self { listener, db }
+        Self {
+            listener,
+            db,
+            master_connection: None,
+        }
     }
 
     pub fn init_repl_state(&mut self) {
@@ -67,9 +73,21 @@ impl Listener {
             .set_repl_id("8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".into());
     }
 
-    pub async fn set_master(&mut self, master: ReplicaInfo) {
+    pub async fn set_master(&mut self, master: ReplicaInfo) -> crate::Result<()> {
+        // send handshake to master
+        let addr = format!("{}:{}", master.host.clone(), master.port.clone());
+        let stream = TcpStream::connect(addr).await?;
+        let mut connection = Connection::new(stream);
+
+        // do handshake
+        let mut ping_frame = RESP::array();
+        ping_frame.push_bulk(Bytes::from("PING"));
+        connection.write_frame(&ping_frame).await?;
+
         self.db.db().set_role(crate::Role::Slave);
         self.db.db().set_master(master);
+
+        Ok(())
     }
 
     pub async fn run(&mut self) -> crate::Result<()> {

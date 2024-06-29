@@ -83,6 +83,7 @@ impl Connection {
 
     /// Write a single `RESP` value to the underlying connection stream
     pub async fn write_frame(&mut self, frame: &RESP) -> io::Result<()> {
+        println!("Write frame {:?}", &frame);
         match frame {
             RESP::Array(list) => {
                 // Encode the RESP data type prefix for an array `*`
@@ -126,11 +127,11 @@ impl Connection {
                 let len = data.len() as u64;
                 self.write_decimal(len).await?;
 
-                if String::from_utf8(data.to_vec()).unwrap().to_lowercase() == "ping" {
-                    self.stream.write_all(b"PONG").await?;
-                } else {
-                    self.stream.write_all(data).await?;
-                }
+                // if String::from_utf8(data.to_vec()).unwrap().to_lowercase() == "ping" {
+                //     self.stream.write_all(b"PONG").await?;
+                // } else {
+                self.stream.write_all(data).await?;
+                // }
 
                 self.stream.write_all(b"\r\n").await?;
             }
