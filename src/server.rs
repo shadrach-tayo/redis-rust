@@ -208,11 +208,6 @@ impl Handler {
 
                 // Run Command and write result RESP to stream
                 command.apply(&mut self.connection, &self.db).await?;
-            } else {
-                // close connection
-                // println!("Error parsing Resp {:?}", resp);
-                // break;
-                // continue;
             }
 
             // check if connection idle time is passed and close connection

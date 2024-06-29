@@ -20,7 +20,6 @@ impl PSync {
     /// Parse next_string()? to get the config value
     ///
     pub fn from_parts(reader: &mut RespReader) -> Result<Self, RespReaderError> {
-        println!("Read psync");
         let key = reader.next_string()?;
         let value = reader.next_string()?;
 
@@ -32,7 +31,7 @@ impl PSync {
         #[allow(unused_assignments)]
         let (replid, _) = db.get_repl_info();
         let replid = replid.unwrap();
-        let resp = RESP::Simple(replid);
+        let resp = RESP::Simple(format!("+FULLRESYNC {} 0", replid));
 
         dbg!(&resp);
 
