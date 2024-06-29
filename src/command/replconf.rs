@@ -5,7 +5,7 @@ use crate::{connection::Connection, frame::RESP, RespReader, RespReaderError};
 #[derive(Debug, Default)]
 pub struct Replconf {
     key: String,
-    value: String,
+    value: Vec<String>,
 }
 
 impl Replconf {
@@ -20,10 +20,19 @@ impl Replconf {
     /// Parse next_string()? to get the config value
     ///
     pub fn from_parts(reader: &mut RespReader) -> Result<Self, RespReaderError> {
+        println!("Parse REPLCONF");
         let key = reader.next_string()?;
-        let value = reader.next_string()?;
+        let mut values = vec![];
+        let mut value = reader.next_string();
 
-        Ok(Replconf { key, value })
+        while value.is_ok() {
+            values.push(value.unwrap());
+            value = reader.next_string();
+        }
+
+        println!("Parsed REPLCONF {}", values.len());
+
+        Ok(Replconf { key, value: values })
     }
 
     /// Apply the echo command and write to the Tcp connection stream
@@ -44,7 +53,9 @@ impl From<Replconf> for RESP {
         let mut resp = RESP::array();
         resp.push_bulk(Bytes::from("REPLCONF"));
         resp.push_bulk(Bytes::from(value.key));
-        resp.push_bulk(Bytes::from(value.value));
+        for value in value.value.iter() {
+            resp.push_bulk(Bytes::from(value.clone()));
+        }
         resp
     }
 }

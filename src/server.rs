@@ -93,8 +93,9 @@ impl Listener {
         ping_frame.push_bulk(Bytes::from("PING"));
         connection.write_frame(&ping_frame).await?;
 
-        let resp = connection.read_resp().await?;
-        println!("Response to ping: {:?}", &resp);
+        let _ = time::sleep(Duration::from_millis(50));
+
+        let _ = connection.read_resp().await?;
 
         // send 1st REPLCONF
         let mut repl_conf_frame = RESP::array();
@@ -105,18 +106,33 @@ impl Listener {
         ));
         connection.write_frame(&repl_conf_frame).await?;
 
-        let resp = connection.read_resp().await?;
-        println!("Response to REPLCONF 1: {:?}", &resp);
+        let _ = time::sleep(Duration::from_millis(50));
 
+        let _ = connection.read_resp().await?;
+
+        // let _ = time::sleep(Duration::from_millis(100));
         // send 2nd REPLCONF
-        let mut repl_conf_frame = RESP::array();
-        repl_conf_frame.push_bulk(Bytes::from("REPLCONF"));
-        repl_conf_frame.push_bulk(Bytes::from("capa"));
-        repl_conf_frame.push_bulk(Bytes::from("psync2"));
-        connection.write_frame(&repl_conf_frame).await?;
+        // REPLCONF capa eof capa psync2
+        let mut repl_conf_frame_2 = RESP::array();
+        repl_conf_frame_2.push_bulk(Bytes::from("REPLCONF"));
+        repl_conf_frame_2.push_bulk(Bytes::from("capa"));
+        repl_conf_frame_2.push_bulk(Bytes::from("eof"));
+        repl_conf_frame_2.push_bulk(Bytes::from("capa"));
+        repl_conf_frame_2.push_bulk(Bytes::from("psync2"));
+        connection.write_frame(&repl_conf_frame_2).await?;
 
-        let resp = connection.read_resp().await?;
-        println!("Response to REPLCONF 2: {:?}", &resp);
+        let _ = time::sleep(Duration::from_millis(50));
+        let _ = connection.read_resp().await?;
+
+        // PSYNC with master
+        let mut psync_resp = RESP::array();
+        psync_resp.push_bulk(Bytes::from("PSYNC"));
+        psync_resp.push_bulk(Bytes::from("?"));
+        psync_resp.push_bulk(Bytes::from("-1"));
+        connection.write_frame(&psync_resp).await?;
+
+        let _ = time::sleep(Duration::from_millis(50));
+        let _ = connection.read_resp().await?;
 
         self.db.db().set_role(crate::Role::Slave);
         self.db.db().set_master(master);
@@ -133,6 +149,7 @@ impl Listener {
             // accpet next tcp connection from client
             let stream = self.accept().await?;
 
+            println!("Accept new connection {:?}", stream.peer_addr());
             // let stream = Arc::new(stream);
             // let stream = Arc::clone(&stream);
             let mut handler = Handler {
@@ -165,7 +182,7 @@ impl Listener {
                     }
                 }
             }
-            time::sleep(Duration::from_secs(backoff)).await;
+            let _ = time::sleep(Duration::from_secs(backoff)).await;
             backoff *= 2;
         }
     }
@@ -193,7 +210,9 @@ impl Handler {
                 command.apply(&mut self.connection, &self.db).await?;
             } else {
                 // close connection
-                break;
+                // println!("Error parsing Resp {:?}", resp);
+                // break;
+                // continue;
             }
 
             // check if connection idle time is passed and close connection

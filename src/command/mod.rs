@@ -2,6 +2,7 @@ pub mod echo;
 pub mod get;
 pub mod info;
 pub mod ping;
+pub mod psync;
 pub mod replconf;
 pub mod set;
 pub mod unknown;
@@ -13,7 +14,8 @@ use echo::Echo;
 use get::Get;
 use info::Info;
 use ping::Ping;
-use replconf::*;
+use psync::PSync;
+use replconf::Replconf;
 use set::Set;
 use unknown::Unknown;
 
@@ -29,6 +31,7 @@ pub enum Command {
     Get(Get),
     Info(Info),
     Replconf(Replconf),
+    PSync(PSync),
 }
 
 impl Command {
@@ -48,10 +51,11 @@ impl Command {
             "get" => Command::Get(Get::from_parts(&mut resp_reader)?),
             "info" => Command::Info(Info::from_parts(&mut resp_reader)?),
             "replconf" => Command::Replconf(Replconf::from_parts(&mut resp_reader)?),
+            "psync" => Command::PSync(PSync::from_parts(&mut resp_reader)?),
             _ => panic!("Unexpected command"),
         };
 
-        // dbg!(&command);
+        dbg!(&command);
 
         // Check if reader has been consumed, if not return an Error
         // to alert protocol of unexpected frame format
@@ -74,6 +78,7 @@ impl Command {
             Get(command) => command.apply(&db, dst).await,
             Info(command) => command.apply(&db, dst).await,
             Replconf(command) => command.apply(dst).await,
+            PSync(command) => command.apply(&db, dst).await,
             // _ => unimplemented!(),
         }
 
@@ -94,6 +99,7 @@ impl Command {
             Command::Get(_) => "get",
             Command::Info(_) => "info",
             Command::Replconf(_) => "resplconf",
+            Command::PSync(_) => "psync",
             Command::Unknown(command) => command.get_name(),
         }
     }
@@ -179,11 +185,6 @@ impl RespReader {
 
     /// Check if RESP has been exhausted from the reader
     pub fn finish(&mut self) -> Result<(), RespReaderError> {
-        // if self.inner.next().is_none() {
-        //     Ok(())
-        // } else {
-        //     Err("Expected end of RESP!!!".into())
-        // }
         match self.inner.next() {
             Some(_) => Err("Expected end of RESP!!!".into()),
             None => Ok(()),

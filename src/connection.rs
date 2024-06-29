@@ -42,8 +42,8 @@ impl Connection {
     pub fn new(stream: TcpStream) -> Connection {
         Connection {
             stream,
-            buffer: BytesMut::with_capacity(4096),
-            idle_close: Duration::from_secs(10),
+            buffer: BytesMut::with_capacity(8192),
+            idle_close: Duration::from_secs(100),
             closed: false,
             last_active_time: None,
         }
