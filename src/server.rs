@@ -32,6 +32,10 @@ pub struct Listener {
     // Tcp listner
     pub listener: TcpListener,
     pub master_connection: Option<Connection>,
+
+    // current node's network config
+    // (host, port)
+    network_config: Option<(String, u64)>,
 }
 
 pub struct Handler {
@@ -63,9 +67,13 @@ impl Listener {
             listener,
             db,
             master_connection: None,
+            network_config: None,
         }
     }
 
+    pub fn set_network_config(&mut self, config: (String, u64)) {
+        self.network_config = Some(config);
+    }
     pub fn init_repl_state(&mut self) {
         self.db.db().set_role(Role::Master);
         self.db
@@ -79,10 +87,36 @@ impl Listener {
         let stream = TcpStream::connect(addr).await?;
         let mut connection = Connection::new(stream);
 
-        // do handshake
+        // HANDSHAKE PROTOCOL
+        // send PING
         let mut ping_frame = RESP::array();
         ping_frame.push_bulk(Bytes::from("PING"));
         connection.write_frame(&ping_frame).await?;
+
+        let resp = connection.read_resp().await?;
+        println!("Response to ping: {:?}", &resp);
+
+        // send 1st REPLCONF
+        let mut repl_conf_frame = RESP::array();
+        repl_conf_frame.push_bulk(Bytes::from("REPLCONF"));
+        repl_conf_frame.push_bulk(Bytes::from("listening-port"));
+        repl_conf_frame.push_bulk(Bytes::from(
+            self.network_config.as_ref().unwrap().1.to_string(),
+        ));
+        connection.write_frame(&repl_conf_frame).await?;
+
+        let resp = connection.read_resp().await?;
+        println!("Response to REPLCONF 1: {:?}", &resp);
+
+        // send 2nd REPLCONF
+        let mut repl_conf_frame = RESP::array();
+        repl_conf_frame.push_bulk(Bytes::from("REPLCONF"));
+        repl_conf_frame.push_bulk(Bytes::from("capa"));
+        repl_conf_frame.push_bulk(Bytes::from("psync2"));
+        connection.write_frame(&repl_conf_frame).await?;
+
+        let resp = connection.read_resp().await?;
+        println!("Response to REPLCONF 2: {:?}", &resp);
 
         self.db.db().set_role(crate::Role::Slave);
         self.db.db().set_master(master);

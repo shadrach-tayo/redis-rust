@@ -18,7 +18,14 @@ impl Unknown {
 
     /// Apply the echo command and write to the Tcp connection stream
     pub async fn apply(self, dst: &mut Connection) -> crate::Result<()> {
-        let resp = RESP::Error(format!("Err unknown command: {}", self.command_name));
+        #[allow(unused_assignments)]
+        let resp = RESP::Simple("OK".into());
+
+        // if self.get_name() == "REPLCONF" {
+        //     resp = RESP::Simple("OK".into());
+        // } else {
+        //     resp = RESP::Error(format!("Err unknown command: {}", self.command_name));
+        // };
 
         dbg!(&resp);
 

@@ -18,6 +18,8 @@ async fn main() -> Result<(), Error> {
 
     let db = DbGuard::new();
     let mut server = Listener::new(listener, db);
+    // set  network config
+    server.set_network_config(("".into(), config.port));
 
     if let Some(replica_info) = config.replica_info {
         println!("Replica info {:?}", &replica_info);

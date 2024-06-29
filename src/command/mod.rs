@@ -2,6 +2,7 @@ pub mod echo;
 pub mod get;
 pub mod info;
 pub mod ping;
+pub mod replconf;
 pub mod set;
 pub mod unknown;
 
@@ -12,6 +13,7 @@ use echo::Echo;
 use get::Get;
 use info::Info;
 use ping::Ping;
+use replconf::*;
 use set::Set;
 use unknown::Unknown;
 
@@ -26,6 +28,7 @@ pub enum Command {
     Set(Set),
     Get(Get),
     Info(Info),
+    Replconf(Replconf),
 }
 
 impl Command {
@@ -44,7 +47,8 @@ impl Command {
             "set" => Command::Set(Set::from_parts(&mut resp_reader)?),
             "get" => Command::Get(Get::from_parts(&mut resp_reader)?),
             "info" => Command::Info(Info::from_parts(&mut resp_reader)?),
-            _ => panic!("Unexpected command"), // return Ok(Command::Unknown(Unknown::new(command_name))),
+            "replconf" => Command::Replconf(Replconf::from_parts(&mut resp_reader)?),
+            _ => panic!("Unexpected command"),
         };
 
         // dbg!(&command);
@@ -68,7 +72,9 @@ impl Command {
             Unknown(command) => command.apply(dst).await,
             Set(command) => command.apply(&db, dst).await,
             Get(command) => command.apply(&db, dst).await,
-            Info(command) => command.apply(&db, dst).await, // _ => unimplemented!(),
+            Info(command) => command.apply(&db, dst).await,
+            Replconf(command) => command.apply(dst).await,
+            // _ => unimplemented!(),
         }
 
         // if command_response.is_err() {
@@ -87,6 +93,7 @@ impl Command {
             Command::Set(_) => "set",
             Command::Get(_) => "get",
             Command::Info(_) => "info",
+            Command::Replconf(_) => "resplconf",
             Command::Unknown(command) => command.get_name(),
         }
     }
