@@ -61,7 +61,7 @@ impl PSync {
 
         // dbg!(&resp);
 
-        time::sleep(Duration::from_millis(50)).await;
+        time::sleep(Duration::from_millis(5)).await;
         dst.write_raw_bytes(empty_rdb_file()).await?;
 
         Ok(None)
