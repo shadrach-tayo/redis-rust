@@ -19,18 +19,7 @@ pub(crate) fn empty_rdb_file() -> Vec<u8> {
         .map(|i| u8::from_str_radix(&EMPTY_DB_FILE[i..i + 2], 16).unwrap())
         .collect();
 
-    // let file = hex::decode(EMPTY_DB_FILE)
-    //     .map_err(|decoding_error| {
-    //         io::Error::new(io::ErrorKind::InvalidData, decoding_error.to_string())
-    //     })
-    //     .unwrap();
-
-    // // let mut header: Vec<u8> = format!("${}\r\n", file.len()).as_bytes().to_owned();
-    // // header.extend(file);
-    // // header
-
     rdb_bytes
-    // file
 }
 
 impl PSync {
@@ -59,9 +48,8 @@ impl PSync {
         let resp = RESP::Simple(format!("+FULLRESYNC {} 0", replid));
         dst.write_frame(&resp).await?;
 
-        // dbg!(&resp);
-
         time::sleep(Duration::from_millis(5)).await;
+        // eagerly send response to replica node
         dst.write_raw_bytes(empty_rdb_file()).await?;
 
         Ok(None)

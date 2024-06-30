@@ -33,8 +33,6 @@ impl Info {
         }
 
         let resp = RESP::Bulk(Bytes::from(data));
-        // dst.write_frame(&resp).await?;
-
         Ok(Some(resp))
     }
 

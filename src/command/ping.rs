@@ -34,10 +34,6 @@ impl Ping {
             None => RESP::Simple("PONG".to_string()),
         };
 
-        // dbg!(&resp);
-
-        // dst.write_frame(&resp).await?;
-
         Ok(Some(resp))
     }
 }

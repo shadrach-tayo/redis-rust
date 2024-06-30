@@ -20,7 +20,6 @@ impl Replconf {
     /// Parse next_string()? to get the config value
     ///
     pub fn from_parts(reader: &mut RespReader) -> Result<Self, RespReaderError> {
-        println!("Parse REPLCONF");
         let key = reader.next_string()?;
         let mut values = vec![];
         let mut value = reader.next_string();
@@ -30,8 +29,6 @@ impl Replconf {
             value = reader.next_string();
         }
 
-        println!("Parsed REPLCONF {}", values.len());
-
         Ok(Replconf { key, value: values })
     }
 
@@ -40,8 +37,7 @@ impl Replconf {
         #[allow(unused_assignments)]
         let resp = RESP::Simple("OK".to_owned());
 
-        dbg!(&resp);
-
+        // eagerly send reply to replica connection
         dst.write_frame(&resp).await?;
 
         Ok(None)

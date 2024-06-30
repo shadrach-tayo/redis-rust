@@ -21,10 +21,6 @@ impl Unknown {
         #[allow(unused_assignments)]
         let resp = RESP::Error(format!("Err unknown command: {}", self.command_name));
 
-        // dbg!(&resp);
-
-        // dst.write_frame(&resp).await?;
-
         Ok(Some(resp))
     }
 }

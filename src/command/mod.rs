@@ -55,8 +55,6 @@ impl Command {
             _ => panic!("Unexpected command"),
         };
 
-        // dbg!(&command);
-
         // Check if reader has been consumed, if not return an Error
         // to alert protocol of unexpected frame format
         resp_reader.finish()?;

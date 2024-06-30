@@ -37,9 +37,6 @@ impl Get {
             RESP::Null
         };
 
-        // write the OK response to the client connection buffer
-        // dst.write_frame(&response).await?;
-
         Ok(Some(response))
     }
 }
