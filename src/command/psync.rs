@@ -48,7 +48,7 @@ impl PSync {
         let resp = RESP::Simple(format!("+FULLRESYNC {} 0", replid));
         dst.write_frame(&resp).await?;
 
-        time::sleep(Duration::from_millis(5)).await;
+        // time::sleep(Duration::from_millis(5)).await;
         // eagerly send response to replica node
         dst.write_raw_bytes(empty_rdb_file()).await?;
 
