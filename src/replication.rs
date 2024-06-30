@@ -1,13 +1,13 @@
 use std::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ReplicaInfo {
     pub host: String,
     pub port: String,
     pub role: Role,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Role {
     Master,
     Slave,
@@ -27,3 +27,9 @@ impl fmt::Display for Role {
         }
     }
 }
+
+// impl PartialEq for Role {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.to_string() == other.to_string()
+//     }
+// }

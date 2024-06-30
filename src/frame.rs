@@ -11,7 +11,7 @@ use bytes::{Buf, Bytes};
 pub const TERMINATOR: &str = "\r\n";
 
 #[allow(unused)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RESP {
     Simple(String),
     Error(String),
@@ -113,7 +113,7 @@ impl RESP {
                 // null data type
                 Ok(RESP::Null)
             }
-            raw => Err(format!("Invalid frame type byte `{}`", raw).into()),
+            raw => Err(format!("Invalid RESP data type: `{}`", raw).into()),
         }
     }
 
@@ -148,6 +148,24 @@ impl RESP {
             }
             err => Err(format!("Error reading request {}", err).into()),
         }
+    }
+}
+
+pub fn parse_rdb(cursor: &mut Cursor<&[u8]>) -> Result<Bytes, RESPError> {
+    match get_u8(cursor)? {
+        b'$' => {
+            let len = get_decimal(cursor)?.try_into()?;
+            if cursor.remaining() < len {
+                return Err(RESPError::Incomplete);
+            }
+            let data = Bytes::copy_from_slice(&cursor.chunk()[..len]);
+
+            // skip that number of bytes + 2
+            skip(cursor, len)?;
+
+            Ok(data)
+        }
+        other => Err(format!("Invalid RDB FILE data type: `{}`", other).into()),
     }
 }
 
@@ -206,8 +224,8 @@ pub fn get_line<'a>(src: &'a mut Cursor<&[u8]>) -> Result<&'a [u8], RESPError> {
 
     for i in start..end {
         if src.get_ref()[i] == b'\r' && src.get_ref()[i + 1] == b'\n' {
+            // println!("Line: {:?}", &src.get_ref()[i - 2..i - 1]);
             src.set_position((i + 2) as u64);
-            // println!("parsed line {:?}", &src.get_ref()[start..i]);
             return Ok(&src.get_ref()[start..i]);
         }
     }

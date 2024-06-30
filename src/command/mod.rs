@@ -55,7 +55,7 @@ impl Command {
             _ => panic!("Unexpected command"),
         };
 
-        dbg!(&command);
+        // dbg!(&command);
 
         // Check if reader has been consumed, if not return an Error
         // to alert protocol of unexpected frame format
@@ -70,7 +70,7 @@ impl Command {
     pub async fn apply(self, dst: &mut Connection, db: &Db) -> crate::Result<()> {
         use Command::*;
 
-        match self {
+        let resp = match self {
             Echo(command) => command.apply(dst).await,
             Ping(command) => command.apply(dst).await,
             Unknown(command) => command.apply(dst).await,
@@ -80,15 +80,16 @@ impl Command {
             Replconf(command) => command.apply(dst).await,
             PSync(command) => command.apply(&db, dst).await,
             // _ => unimplemented!(),
-        }
+        };
 
-        // if command_response.is_err() {
-        //     let err = command_response.err().unwrap();
-        //     dst.write_frame(&RESP::Error(err.to_string())).await?;
-        //     Ok(())
-        // } else {
-        //     Ok(())
-        // }
+        if let Ok(Some(resp)) = resp {
+            if !dst.is_master {
+                dst.write_frame(&resp).await?;
+            }
+            return Ok(());
+        } else {
+            return Ok(());
+        }
     }
 
     pub fn get_name(&self) -> &str {
@@ -101,6 +102,13 @@ impl Command {
             Command::Replconf(_) => "resplconf",
             Command::PSync(_) => "psync",
             Command::Unknown(command) => command.get_name(),
+        }
+    }
+
+    pub fn is_replicable_command(&self) -> bool {
+        match self {
+            Command::Set(_) => true,
+            _ => false,
         }
     }
 }
@@ -198,7 +206,7 @@ pub fn convert_bytes_to_u64(bytes: bytes::Bytes) -> Result<u64, String> {
         .parse::<u64>()
         .map_err(|_| "Cannot parse u64 from bytes".to_string())?;
 
-    println!("U64 value {:?}", int);
+    // println!("U64 value {:?}", int);
     Ok(int)
 }
 

@@ -1,6 +1,8 @@
 use std::env::Args;
 
-use redis_starter_rust::{server::Listener, DbGuard, Error, ReplicaInfo, Role};
+use redis_starter_rust::{
+    connection::Connection, server::Listener, DbGuard, Error, ReplicaInfo, Role,
+};
 use tokio::net::TcpListener;
 
 #[tokio::main]
@@ -21,11 +23,15 @@ async fn main() -> Result<(), Error> {
     // set  network config
     server.set_network_config(("".into(), config.port));
 
+    let mut master_connection: Option<Connection> = None;
     if let Some(replica_info) = config.replica_info {
-        println!("Replica info {:?}", &replica_info);
-        let _ = server.set_master(replica_info).await?;
+        master_connection = server.handshake(replica_info).await?;
     } else {
         server.init_repl_state();
+    }
+
+    if master_connection.is_some() {
+        let _ = server.listen_to_master(master_connection.unwrap()).await;
     }
 
     tokio::select! {

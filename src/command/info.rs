@@ -14,7 +14,7 @@ impl Info {
     }
 
     /// Apply the echo command and write to the Tcp connection stream
-    pub async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<()> {
+    pub async fn apply(self, db: &Db, _dst: &mut Connection) -> crate::Result<Option<RESP>> {
         // dbg!(&resp);
         let role = db.get_role();
         let mut data: String = "role:".to_owned();
@@ -33,9 +33,9 @@ impl Info {
         }
 
         let resp = RESP::Bulk(Bytes::from(data));
-        dst.write_frame(&resp).await?;
+        // dst.write_frame(&resp).await?;
 
-        Ok(())
+        Ok(Some(resp))
     }
 
     pub fn from_parts(reader: &mut RespReader) -> Result<Self, RespReaderError> {

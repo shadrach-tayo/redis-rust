@@ -18,10 +18,19 @@ pub(crate) fn empty_rdb_file() -> Vec<u8> {
         .step_by(2)
         .map(|i| u8::from_str_radix(&EMPTY_DB_FILE[i..i + 2], 16).unwrap())
         .collect();
-    // let mut header: Vec<u8> = format!("${}\r\n", rdb_bytes.len()).as_bytes().to_owned();
-    // header.extend(rdb_bytes);
-    // header
+
+    // let file = hex::decode(EMPTY_DB_FILE)
+    //     .map_err(|decoding_error| {
+    //         io::Error::new(io::ErrorKind::InvalidData, decoding_error.to_string())
+    //     })
+    //     .unwrap();
+
+    // // let mut header: Vec<u8> = format!("${}\r\n", file.len()).as_bytes().to_owned();
+    // // header.extend(file);
+    // // header
+
     rdb_bytes
+    // file
 }
 
 impl PSync {
@@ -43,19 +52,19 @@ impl PSync {
     }
 
     /// Apply the echo command and write to the Tcp connection stream
-    pub async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<()> {
+    pub async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<Option<RESP>> {
         #[allow(unused_assignments)]
         let (replid, _) = db.get_repl_info();
         let replid = replid.unwrap();
         let resp = RESP::Simple(format!("+FULLRESYNC {} 0", replid));
-
-        dbg!(&resp);
-
         dst.write_frame(&resp).await?;
+
+        // dbg!(&resp);
+
         time::sleep(Duration::from_millis(50)).await;
         dst.write_raw_bytes(empty_rdb_file()).await?;
 
-        Ok(())
+        Ok(None)
     }
 }
 

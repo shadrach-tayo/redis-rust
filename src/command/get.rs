@@ -27,7 +27,7 @@ impl Get {
     }
 
     /// Apply the echo command and write to the Tcp connection stream
-    pub async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<()> {
+    pub async fn apply(self, db: &Db, _dst: &mut Connection) -> crate::Result<Option<RESP>> {
         // set the value in the shared cache.
         let value = db.get(&self.key);
 
@@ -38,9 +38,9 @@ impl Get {
         };
 
         // write the OK response to the client connection buffer
-        dst.write_frame(&response).await?;
+        // dst.write_frame(&response).await?;
 
-        Ok(())
+        Ok(Some(response))
     }
 }
 

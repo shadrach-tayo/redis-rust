@@ -44,6 +44,7 @@ pub struct State {
     role: Role,
     replid: Option<String>,
     repl_offset: u64,
+    master: Option<ReplicaInfo>,
     replicas: HashMap<String, ReplicaInfo>,
 }
 
@@ -152,24 +153,49 @@ impl Db {
         state.replid = Some(replid);
     }
 
+    pub fn add_replica(&self, info: ReplicaInfo) {
+        assert_eq!(&info.role, &Role::Master);
+        let mut state = self.inner.state.lock().unwrap();
+        state.replicas.insert(info.key(), info);
+
+        drop(state);
+    }
+
+    pub fn remove_replica(&self, key: String) {
+        let mut state = self.inner.state.lock().unwrap();
+        state.replicas.remove(&key);
+
+        drop(state);
+    }
+
     pub fn set_master(&self, info: ReplicaInfo) {
+        assert_eq!(&info.role, &Role::Master);
         let mut state = self.inner.state.lock().unwrap();
 
-        state.replicas.insert(info.key(), info);
+        state.master = Some(info);
 
         drop(state);
     }
 
     pub fn get_role(&self) -> String {
         let state = self.inner.state.lock().unwrap();
-
         let role: String = state.role.to_string();
-
-        println!("GET ROLE {}", role);
-
         drop(state);
 
         role
+    }
+
+    pub fn get_replicas(&self) -> Vec<ReplicaInfo> {
+        let state = self.inner.state.lock().unwrap();
+        let replicas = state
+            .replicas
+            .values()
+            .cloned()
+            .collect::<Vec<ReplicaInfo>>();
+
+        drop(state);
+
+        replicas
     }
 
     pub fn get_repl_info(&self) -> (Option<String>, u64) {
@@ -194,6 +220,7 @@ impl SharedDb {
                 replicas: HashMap::new(),
                 replid: None,
                 repl_offset: 0,
+                master: None,
             }),
         }
     }

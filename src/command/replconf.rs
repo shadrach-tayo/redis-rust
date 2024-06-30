@@ -36,7 +36,7 @@ impl Replconf {
     }
 
     /// Apply the echo command and write to the Tcp connection stream
-    pub async fn apply(self, dst: &mut Connection) -> crate::Result<()> {
+    pub async fn apply(self, dst: &mut Connection) -> crate::Result<Option<RESP>> {
         #[allow(unused_assignments)]
         let resp = RESP::Simple("OK".to_owned());
 
@@ -44,7 +44,7 @@ impl Replconf {
 
         dst.write_frame(&resp).await?;
 
-        Ok(())
+        Ok(None)
     }
 }
 

@@ -28,7 +28,7 @@ impl Ping {
     }
 
     /// Apply the echo command and write to the Tcp connection stream
-    pub async fn apply(self, dst: &mut Connection) -> crate::Result<()> {
+    pub async fn apply(self, _dst: &mut Connection) -> crate::Result<Option<RESP>> {
         let resp = match self.msg {
             Some(_msg) => RESP::Simple("PONG".to_string()), //RESP::Bulk(msg),
             None => RESP::Simple("PONG".to_string()),
@@ -36,9 +36,9 @@ impl Ping {
 
         // dbg!(&resp);
 
-        dst.write_frame(&resp).await?;
+        // dst.write_frame(&resp).await?;
 
-        Ok(())
+        Ok(Some(resp))
     }
 }
 
