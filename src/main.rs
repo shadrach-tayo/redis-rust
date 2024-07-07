@@ -37,7 +37,7 @@ async fn main() -> Result<(), Error> {
     tokio::select! {
         result = server.run() => {
             if let Err(err) = result {
-            // println!("Server error {:?}", err);s
+                println!("Server error {:?}", err);
                 Err(err)
             } else {
                 Ok(())
@@ -100,3 +100,10 @@ fn parse_config(args: &mut Args) -> CliConfig {
 
     config
 }
+
+// Refactoring todos
+// Make Replication RESP composable FROM commands ✅
+// Implement File format ✅
+// Move handshake to handler
+// Maintain a List of connected slaves on a master node
+// Refactor handler::run() to make it more readable

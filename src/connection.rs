@@ -3,13 +3,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bytes::{Bytes, BytesMut};
+use bytes::{Buf, BytesMut};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
+    // time::timeout,
 };
 
-use crate::frame::{parse_rdb, RESP};
+use crate::resp::RESP;
 
 /// Read and write RESP data from the socket
 /// to read
@@ -29,7 +30,7 @@ pub struct Connection {
     pub idle_close: Duration,
 
     /// last time the connection was active
-    /// i.e received a frame from the client
+    /// i.e received a resp from the client
     pub last_active_time: Option<Instant>,
 
     ///
@@ -44,7 +45,7 @@ impl Connection {
     pub fn new(stream: TcpStream, is_master: bool) -> Connection {
         Connection {
             stream,
-            buffer: BytesMut::with_capacity(8192),
+            buffer: BytesMut::with_capacity(4 * 1024),
             idle_close: Duration::from_secs(60 * 60 * 24), // connection ttl = 24 hours
             closed: false,
             last_active_time: None,
@@ -52,94 +53,74 @@ impl Connection {
         }
     }
 
-    /// Read a single RESP from the connection stream
-    pub async fn read_resp(&mut self) -> crate::Result<Option<RESP>> {
-        let size = self.stream.read_buf(&mut self.buffer).await?;
-
-        if size == 0 {
-            return Ok(None);
-        }
-
-        let resp = self.parse_frame()?;
-        Ok(resp)
+    pub async fn flush_stream(&mut self) -> io::Result<()> {
+        self.stream.flush().await
     }
 
-    pub async fn read_rdb(&mut self) -> crate::Result<Option<Bytes>> {
-        let size = self.stream.read_buf(&mut self.buffer).await?;
-
-        // println!("Incoming RDB BUFFER {:?}", self.buffer.len());
-
-        if size == 0 {
-            return Ok(None);
-        }
-
-        let mut cursor = Cursor::new(&self.buffer[..]);
-        match parse_rdb(&mut cursor) {
-            Ok(data) => {
-                // discard used buffer
-                let _ = self.buffer.split();
-                return Ok(Some(data));
+    /// Read a single RESP from the connection stream
+    pub async fn read_resp(&mut self) -> crate::Result<Option<RESP>> {
+        loop {
+            if let Some(resp) = self.parse_resp()? {
+                return Ok(Some(resp));
             }
-            // Not enough data present to read RDB File
-            Err(crate::RESPError::Incomplete) => Ok(None),
-            Err(err) => return Err(err.into()),
+
+            if 0 == self.stream.read_buf(&mut self.buffer).await? {
+                if self.buffer.is_empty() {
+                    return Ok(None);
+                } else {
+                    return Err("Connection reset by peer".into());
+                }
+            }
         }
     }
 
     /// Attempts to parse bytes from the buffered connection
     /// stream to a `RESP` data structure for processing
-    pub fn parse_frame(&mut self) -> crate::Result<Option<RESP>> {
-        // println!("Incoming Buffer {:?}", self.buffer.len());
+    pub fn parse_resp(&mut self) -> crate::Result<Option<RESP>> {
         let mut cursor = Cursor::new(&self.buffer[..]);
 
-        match RESP::parse_frame(&mut cursor) {
+        match RESP::parse_resp(&mut cursor) {
             Ok(resp) => {
-                let _ = self.buffer.split();
+                // get the current position of the cursor after the resp is
+                // successfully parsed
+                let pos = cursor.position() as usize;
+
+                // advance the connection buffer by the pos
+                // This discards the read buffer and next calls to read from the
+                // buffer starts from pos.
+                self.buffer.advance(pos);
                 return Ok(Some(resp));
             }
             // Not enough data present to parse a RESP
-            Err(crate::RESPError::Incomplete) => {
-                // println!("Incomplete buffer");
-                Ok(None)
-            }
+            Err(crate::RESPError::Incomplete) => Ok(None),
             Err(err) => return Err(err.into()),
         }
     }
 
     /// Write a single `RESP` value to the underlying connection stream
-    pub async fn write_frame(&mut self, frame: &RESP) -> io::Result<()> {
-        // println!("Write frame {:?}", &frame);
-        match frame {
+    pub async fn write_frame(&mut self, resp: &RESP) -> io::Result<()> {
+        // println!("Write resp {:?}", &resp);
+        match resp {
             RESP::Array(list) => {
                 // Encode the RESP data type prefix for an array `*`
                 self.stream.write_all(b"*").await?;
                 self.write_decimal(list.len() as u64).await?;
 
-                for frame in list {
-                    self.write_value(frame).await?;
+                for resp in list {
+                    self.write_value(resp).await?;
                 }
             }
-            // frame is a literal type not a list/aggregate
-            _ => self.write_value(frame).await?,
+            // resp is a literal type not a list/aggregate
+            _ => self.write_value(resp).await?,
         }
 
-        // println!("Outgoing Buffer: {:?}", frame);
+        // println!("Outgoing Buffer: {:?}", resp);
         self.stream.flush().await
     }
 
     /// Write a single `RESP` value to the underlying connection stream
-    pub async fn write_raw_bytes(&mut self, data: Vec<u8>) -> io::Result<()> {
-        self.stream
-            .write_all(format!("${}\r\n", data.len()).as_bytes())
-            .await?;
-        // println!("Write raw {:?}", data.len());
-        self.stream.write_all(&data).await?;
-        self.stream.flush().await
-    }
-
-    /// Write a single `RESP` value to the underlying connection stream
-    async fn write_value(&mut self, frame: &RESP) -> io::Result<()> {
-        match frame {
+    async fn write_value(&mut self, resp: &RESP) -> io::Result<()> {
+        match resp {
             RESP::Null => {
                 self.stream.write_all(b"$-1\r\n").await?;
             }
@@ -161,14 +142,15 @@ impl Connection {
                 self.stream.write_all(b"$").await?;
                 let len = data.len() as u64;
                 self.write_decimal(len).await?;
-
-                // if String::from_utf8(data.to_vec()).unwrap().to_lowercase() == "ping" {
-                //     self.stream.write_all(b"PONG").await?;
-                // } else {
-                // }
                 self.stream.write_all(data).await?;
-
                 self.stream.write_all(b"\r\n").await?;
+            }
+            RESP::File(data) => {
+                self.stream.write_all(b"$").await?;
+                let len = data.len() as u64;
+                self.write_decimal(len).await?;
+                println!("Write File: {}", len);
+                self.stream.write_all(data).await?;
             }
             RESP::Array(_) => unimplemented!(),
         }

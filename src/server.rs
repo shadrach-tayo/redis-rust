@@ -16,17 +16,16 @@
 
 use std::{sync::Arc, time::Duration};
 
-use bytes::Bytes;
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::{
-        mpsc::{self, Receiver, Sender},
-        Mutex,
-    },
+    sync::broadcast,
     time,
 };
 
-use crate::{connection::Connection, frame::RESP, Command, Db, DbGuard, ReplicaInfo, Role};
+use crate::{
+    connection::Connection, ping::Ping, resp::RESP, Command, Db, DbGuard, PSync, Replconf,
+    ReplicaInfo, Role,
+};
 
 #[derive(Debug)]
 pub struct Listener {
@@ -55,11 +54,6 @@ pub struct Handler {
 
     // Marker to indicate if wraped connection is a replica or not
     pub is_replica: bool,
-
-    // channel for listening for replicable commands to write to connection
-    command_receiver: Arc<Mutex<Receiver<RESP>>>,
-    // channel for broadcasting replicable commands from connection
-    command_sender: Sender<RESP>,
 }
 
 /// Run the redis server
@@ -101,70 +95,63 @@ impl Listener {
 
         // HANDSHAKE PROTOCOL
         // send PING
-        let mut ping_frame = RESP::array();
-        ping_frame.push_bulk(Bytes::from("PING"));
-        connection.write_frame(&ping_frame).await?;
+        connection.write_frame(&Ping::new(None).into()).await?;
 
-        // let _ = time::sleep(Duration::from_millis(50));
-
-        let _ = wait_for_response(&mut connection).await?; // connection.read_resp().await?;
+        let _ = connection.read_resp().await?;
 
         // send 1st REPLCONF
-        let mut repl_conf_frame = RESP::array();
-        repl_conf_frame.push_bulk(Bytes::from("REPLCONF"));
-        repl_conf_frame.push_bulk(Bytes::from("listening-port"));
-        repl_conf_frame.push_bulk(Bytes::from(
+        let listening_conf = Replconf::new(vec![
+            "listening-port".into(),
             self.network_config.as_ref().unwrap().1.to_string(),
-        ));
-        connection.write_frame(&repl_conf_frame).await?;
+        ]);
+        connection.write_frame(&listening_conf.into()).await?;
 
-        let _ = wait_for_response(&mut connection).await?; // connection.read_resp().await?;
+        connection.read_resp().await?;
 
         // send 2nd REPLCONF
-        // REPLCONF capa eof capa psync2
-        let mut repl_conf_frame_2 = RESP::array();
-        repl_conf_frame_2.push_bulk(Bytes::from("REPLCONF"));
-        repl_conf_frame_2.push_bulk(Bytes::from("capa"));
-        repl_conf_frame_2.push_bulk(Bytes::from("eof"));
-        repl_conf_frame_2.push_bulk(Bytes::from("capa"));
-        repl_conf_frame_2.push_bulk(Bytes::from("psync2"));
-        connection.write_frame(&repl_conf_frame_2).await?;
+        let replconf_capa = Replconf::new(vec!["capa".into(), "eof".into(), "psync2".into()]);
+        connection.write_frame(&replconf_capa.into()).await?;
 
-        let _ = wait_for_response(&mut connection).await?; // connection.read_resp().await?;
+        let _ = connection.read_resp().await?;
 
         // PSYNC with master
-        let mut psync_resp = RESP::array();
-        psync_resp.push_bulk(Bytes::from("PSYNC"));
-        psync_resp.push_bulk(Bytes::from("?"));
-        psync_resp.push_bulk(Bytes::from("-1"));
-        connection.write_frame(&psync_resp).await?;
+        connection
+            .write_frame(&PSync::new("?".into(), "-1".into()).into())
+            .await?;
 
-        let _ = wait_for_response(&mut connection).await?;
-        let _ = wait_for_rdb_response(&mut connection).await?;
+        let resp = connection.read_resp().await?;
+        println!("FULLSYNC 1: {:?}", resp);
+
+        let _resp = connection.read_resp().await?;
+        println!("Rdb file: {:?}", _resp);
 
         self.db.db().set_role(crate::Role::Slave);
         self.db.db().set_master(master);
 
-        connection.last_active_time = Some(std::time::Instant::now());
-
+        println!("Handshake complete!!!");
         Ok(Some(connection))
     }
 
     pub async fn listen_to_master(&mut self, connection: Connection) -> crate::Result<()> {
-        let (tx, rx) = mpsc::channel(1);
+        println!("Listen to master");
+
         let mut handler = Handler {
             connection,
             db: self.db.db(),
             is_replica: false,
-            command_sender: tx,
-            command_receiver: Arc::new(rx.into()),
+            // command_sender: tx,
+            // command_receiver: Arc::new(rx.into()),
         };
+
+        let (tx, _) = broadcast::channel::<RESP>(1);
+        let tx = Arc::new(tx);
+        let tx = Arc::clone(&tx);
 
         tokio::spawn(async move {
             // pass the connection to a new handler
             // in an async thread
             println!("Listen to master");
-            if let Err(err) = handler.run().await {
+            if let Err(err) = handler.run(tx).await {
                 println!("Master Handler error {:?}", err);
             }
         });
@@ -173,12 +160,14 @@ impl Listener {
     }
 
     pub async fn run(&mut self) -> crate::Result<()> {
+        println!("Listening on: {:?}", self.listener.local_addr());
+
         // create a channel for listening for replicable commands
         // to be sent to replica connections
-        let (cmd_tx, cmd_rcv) = mpsc::channel::<RESP>(10);
+        let (sender, _rx) = broadcast::channel::<RESP>(16);
 
-        let cmd_receiver = Arc::new(Mutex::new(cmd_rcv));
-        let cmd_tx = Arc::new(cmd_tx);
+        // let cmd_receiver = Arc::new(Mutex::new(cmd_rcv));
+        let sender = Arc::new(sender);
 
         loop {
             // accpet next tcp connection from client
@@ -186,36 +175,42 @@ impl Listener {
 
             // create channel for sending commands from non-slave connections
             // to server to broadcast to slave connections
-            let (handler_tx, mut handler_rcv) = mpsc::channel::<RESP>(10);
+            // let (handler_tx, mut handler_rcv) = mpsc::channel::<RESP>(10);
+
             println!("Accept new connection {:?}", stream.peer_addr());
 
             let mut handler = Handler {
                 connection: Connection::new(stream, false),
                 db: self.db.db(),
                 is_replica: false,
-                command_sender: handler_tx,
-                command_receiver: Arc::clone(&cmd_receiver),
+                // command_sender: handler_tx,
+                // command_receiver: Arc::clone(&cmd_receiver),
             };
 
-            let command_broadcaster = Arc::clone(&cmd_tx);
-
+            let sender = Arc::clone(&sender);
             tokio::spawn(async move {
                 // pass the connection to a new handler
                 // in an async thread
-                if let Err(err) = handler.run().await {
-                    println!("Handler error {:?}", err);
+                if let Err(err) = handler.run(sender).await {
+                    println!(
+                        "Handler error {:?}, Is Replica: {}",
+                        err, handler.is_replica
+                    );
                 }
             });
 
-            tokio::spawn(async move {
-                while let Some(resp) = handler_rcv.recv().await {
-                    // todo: handle send error
-                    // detect if handler is no longer up and running
-                    // cut ties with handler
-                    println!("Command To Replicate: {:?}", &resp);
-                    let _ = command_broadcaster.send(resp).await;
-                }
-            });
+            // let command_broadcaster = Arc::clone(&cmd_tx);
+
+            // tokio::spawn(async move {
+            //     while let Some(resp) = handler_rcv.recv().await {
+            //         // todo: handle send error
+            //         // detect if handler is no longer up and running
+            //         // cut ties with handler
+            //         println!("Command To Replicate: {:?}", &resp);
+            //         let send_result = command_broadcaster.send(resp);
+            //         println!("Sent command to replicate")
+            //     }
+            // });
         }
     }
 
@@ -240,75 +235,52 @@ impl Listener {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct RESPSource {
-    data: Option<RESP>,
-    source: Source,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum Source {
-    DIRECT,
-    REPLICA,
-}
-
 /// Handler struct implementation
 impl Handler {
     /// Process a single inbound connection
     ///
     /// Request RESP are parsed from the socket buffer and processed using `Command`
     /// Response is written back to the socket
-    pub async fn run(&mut self) -> crate::Result<()> {
+    pub async fn run(&mut self, sender: Arc<broadcast::Sender<RESP>>) -> crate::Result<()> {
         let role = self.db.get_role();
         let is_master = role == "master";
         while !self.connection.closed {
-            // parse RESP from connection
-            let mut recv = self.command_receiver.lock().await;
-            let recv = &mut *recv;
-
-            // println!("Listen for RESP");
-            let data = tokio::select! {
-                res = self.connection.read_resp() => res?.map(|data| RESPSource { data: Some(data), source: Source::DIRECT }),
-                    v = tokio::time::timeout(Duration::from_millis(50), recv.recv()) => v.map_or(None, |data| Some(RESPSource { data, source: Source::REPLICA })),
-            };
-
-            if data.is_none() {
-                continue;
-            }
-
-            let data = data.unwrap();
-            let source = data.source;
-            let resp = data.data;
+            let resp = self.connection.read_resp().await?;
 
             if let Some(resp) = resp {
                 let cmd_resp = resp.clone();
+                println!("Data: {:?}", &resp);
 
                 // Map RESP to a Command
                 let command = Command::from_resp(resp)?;
 
                 if is_master {
-                    // if incoming command mutates network state, propagate to all replicas
-                    if command.is_replicable_command()
-                        && self.is_replica
-                        && source == Source::REPLICA
-                    {
-                        // propagate resp to replicas if Server is master
-                        let _ = self.connection.write_frame(&cmd_resp).await;
-                    }
-
-                    if command.is_replicable_command() && source == Source::DIRECT {
+                    if command.is_replicable_command() {
                         // broadcast command to server channel
-                        let _ = self.command_sender.send(cmd_resp).await;
+                        let sx = sender.send(cmd_resp).unwrap();
+                        println!("Command sent {:?}", sx);
                     }
 
-                    if command.get_name() == "psync" {
+                    let command_name = &command.get_name();
+
+                    let subscribe = command_name == "psync";
+
+                    command.apply(&mut self.connection, &self.db).await?;
+
+                    if subscribe {
+                        // respond to psync command before polling for updates
+
+                        println!("Subscribe to Replication sync");
                         // mark connection as replica
                         self.is_replica = true;
-                    }
-                }
 
-                if source == Source::DIRECT {
-                    // Run Command and write result RESP to stream
+                        let mut subscriber = sender.subscribe();
+                        while let Ok(cmd) = subscriber.recv().await {
+                            println!("Command to replicate {:?}", &cmd);
+                            let _ = self.connection.write_frame(&cmd).await;
+                        }
+                    }
+                } else {
                     command.apply(&mut self.connection, &self.db).await?;
                 }
             }
@@ -325,11 +297,14 @@ pub async fn wait_for_response(connection: &mut Connection) -> crate::Result<Opt
     Ok(resp)
 }
 
-pub async fn wait_for_rdb_response(connection: &mut Connection) -> crate::Result<Option<Bytes>> {
-    let mut resp = connection.read_rdb().await?;
-    while resp.is_none() {
-        resp = connection.read_rdb().await?;
-    }
+// pub async fn wait_for_rdb_response(connection: &mut Connection) -> crate::Result<Option<Bytes>> {
+//     let mut resp = connection.read_rdb().await?;
+//     println!("Wait for RDB RESP......{:?}", &resp);
+//     while resp.is_none() {
+//         resp = connection.read_rdb().await?;
+//         time::sleep(Duration::from_millis(10)).await;
+//     }
 
-    Ok(resp)
-}
+//     println!("RDB RESP {:?} ", &resp);
+//     Ok(resp)
+// }

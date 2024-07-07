@@ -1,4 +1,4 @@
-use crate::{connection::Connection, frame::RESP};
+use crate::{connection::Connection, resp::RESP};
 
 #[derive(Debug, Default)]
 pub struct Unknown {

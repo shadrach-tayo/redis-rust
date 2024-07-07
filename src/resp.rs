@@ -17,6 +17,7 @@ pub enum RESP {
     Error(String),
     Integer(u64),
     Bulk(Bytes),
+    File(Bytes),
     Null,
     Array(Vec<RESP>),
 }
@@ -58,21 +59,18 @@ impl RESP {
     }
 
     /// Parse the message from the client
-    pub fn parse_frame(cursor: &mut Cursor<&[u8]>) -> Result<RESP, RESPError> {
+    pub fn parse_resp(cursor: &mut Cursor<&[u8]>) -> Result<RESP, RESPError> {
         match get_u8(cursor)? {
             b'+' => {
-                // strings data type
                 let line = get_line(cursor)?.to_vec();
                 let string = String::from_utf8(line)?;
-                // println!("parse string {}", &string);
                 Ok(RESP::Simple(string))
             }
             b'*' => {
-                // list data type
                 let len = get_decimal(cursor)?.try_into()?;
                 let mut out = Vec::with_capacity(len as usize);
                 for _ in 0..len {
-                    out.push(Self::parse_frame(cursor)?);
+                    out.push(Self::parse_resp(cursor)?);
                 }
                 Ok(RESP::Array(out))
             }
@@ -86,16 +84,30 @@ impl RESP {
                     Ok(RESP::Null)
                 } else {
                     let len = get_decimal(cursor)?.try_into()?;
-                    let n = len + 2;
-                    if cursor.remaining() < n {
+
+                    if cursor.remaining() < len {
                         return Err(RESPError::Incomplete);
                     }
+
                     let data = Bytes::copy_from_slice(&cursor.chunk()[..len]);
 
-                    // skip that number of bytes + 2
-                    skip(cursor, n)?;
+                    skip(cursor, len)?;
 
-                    Ok(RESP::Bulk(data))
+                    let pos = cursor.position() as usize;
+
+                    let clrf = if cursor.has_remaining() {
+                        &cursor.get_ref()[pos..pos + 2] == b"\r\n"
+                    } else {
+                        false
+                    };
+
+                    if clrf {
+                        // skip that number of bytes + 2
+                        skip(cursor, 2)?;
+                        Ok(RESP::Bulk(data))
+                    } else {
+                        Ok(RESP::File(data))
+                    }
                 }
             }
             b':' => {
@@ -122,99 +134,33 @@ impl RESP {
     pub fn check_frame(src: &mut Cursor<&[u8]>) -> Result<(), RESPError> {
         match get_u8(src)? {
             b'+' => {
-                // strings frame
+                // strings resp
                 println!("get u8");
                 Ok(())
             }
             b'*' => {
-                // arrays frame
+                // arrays resp
                 todo!()
             }
             b'$' => {
-                // bulk strings frame
+                // bulk strings resp
                 todo!()
             }
             b':' => {
-                // integers frame
+                // integers resp
                 todo!()
             }
             b'-' => {
-                // simple errors frame
+                // simple errors resp
                 todo!()
             }
             b'_' => {
-                // null frame
+                // null resp
                 todo!()
             }
             err => Err(format!("Error reading request {}", err).into()),
         }
     }
-}
-
-pub fn parse_rdb(cursor: &mut Cursor<&[u8]>) -> Result<Bytes, RESPError> {
-    match get_u8(cursor)? {
-        b'$' => {
-            let len = get_decimal(cursor)?.try_into()?;
-            if cursor.remaining() < len {
-                return Err(RESPError::Incomplete);
-            }
-            let data = Bytes::copy_from_slice(&cursor.chunk()[..len]);
-
-            // skip that number of bytes + 2
-            skip(cursor, len)?;
-
-            Ok(data)
-        }
-        other => Err(format!("Invalid RDB FILE data type: `{}`", other).into()),
-    }
-}
-
-pub fn frame_to_string(
-    frame: &RESP,
-    dst: &mut BufWriter<&mut TcpStream>,
-) -> Result<(), std::io::Error> {
-    match frame {
-        RESP::Null => {
-            dst.write_all(b"$-1\r\n")?;
-        }
-        RESP::Error(error) => {
-            dst.write_all(b"-")?;
-            dst.write_all(error.as_bytes())?;
-            dst.write_all(b"\r\n")?;
-        }
-        RESP::Simple(string) => {
-            dst.write_all(b"+")?;
-            dst.write_all(string.as_bytes())?;
-            dst.write_all(b"\r\n")?;
-        }
-        RESP::Bulk(data) => {
-            dst.write_all(b"$")?;
-            let len = data.len() as u64;
-            write_decimal(dst, len)?;
-
-            if String::from_utf8(data.to_vec()).unwrap().to_lowercase() == "ping" {
-                dst.write_all(b"PONG")?;
-            } else {
-                dst.write_all(data)?;
-            }
-
-            dst.write_all(b"\r\n")?;
-        }
-        RESP::Array(list) => {
-            dst.write_all(b"*")?;
-            write_decimal(dst, list.len() as u64)?;
-
-            for frame in list {
-                frame_to_string(frame, dst)?;
-            }
-        }
-        RESP::Integer(int) => {
-            dst.write_all(b":")?;
-            write_decimal(dst, *int)?;
-        }
-    }
-
-    Ok(())
 }
 
 pub fn get_line<'a>(src: &'a mut Cursor<&[u8]>) -> Result<&'a [u8], RESPError> {
@@ -224,7 +170,6 @@ pub fn get_line<'a>(src: &'a mut Cursor<&[u8]>) -> Result<&'a [u8], RESPError> {
 
     for i in start..end {
         if src.get_ref()[i] == b'\r' && src.get_ref()[i + 1] == b'\n' {
-            // println!("Line: {:?}", &src.get_ref()[i - 2..i - 1]);
             src.set_position((i + 2) as u64);
             return Ok(&src.get_ref()[start..i]);
         }
@@ -289,13 +234,13 @@ impl From<&str> for RESPError {
 
 impl From<FromUtf8Error> for RESPError {
     fn from(_value: FromUtf8Error) -> Self {
-        "Invalid frame format".into()
+        "Invalid resp format".into()
     }
 }
 
 impl From<TryFromIntError> for RESPError {
     fn from(_value: TryFromIntError) -> Self {
-        "Invalid frame format".into()
+        "Invalid resp format".into()
     }
 }
 

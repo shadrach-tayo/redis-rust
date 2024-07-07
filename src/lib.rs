@@ -1,11 +1,11 @@
 pub mod command;
 pub mod connection;
 pub mod db;
-pub mod frame;
 pub mod replication;
+pub mod resp;
 pub mod server;
 
-pub use frame::{frame_to_string, RESPError};
+pub use resp::RESPError;
 
 pub use command::*;
 pub use db::*;

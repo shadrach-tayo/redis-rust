@@ -2,7 +2,7 @@ use tokio::time::Duration;
 
 use bytes::Bytes;
 
-use crate::{connection::Connection, frame::RESP, Db, RespReader, RespReaderError};
+use crate::{connection::Connection, resp::RESP, Db, RespReader, RespReaderError};
 
 #[derive(Debug, Default)]
 pub struct Set {

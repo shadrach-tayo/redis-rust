@@ -1,6 +1,6 @@
 use bytes::Bytes;
 
-use crate::{connection::Connection, frame::RESP, RespReader, RespReaderError};
+use crate::{connection::Connection, resp::RESP, RespReader, RespReaderError};
 
 #[derive(Debug, Default)]
 pub struct Echo {

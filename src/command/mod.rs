@@ -14,12 +14,13 @@ use echo::Echo;
 use get::Get;
 use info::Info;
 use ping::Ping;
-use psync::PSync;
-use replconf::Replconf;
+pub use psync::PSync;
+pub use replconf::Replconf;
 use set::Set;
+// use tokio::sync::broadcast;
 use unknown::Unknown;
 
-use crate::{connection::Connection, frame::RESP, Db};
+use crate::{connection::Connection, resp::RESP, Db};
 
 /// Enum of supported Protocol Commands
 #[derive(Debug)]
@@ -56,7 +57,7 @@ impl Command {
         };
 
         // Check if reader has been consumed, if not return an Error
-        // to alert protocol of unexpected frame format
+        // to alert protocol of unexpected resp format
         resp_reader.finish()?;
 
         Ok(command)
@@ -86,20 +87,21 @@ impl Command {
             }
             return Ok(());
         } else {
+            // println!("Command: {} applied: {:?}");
             return Ok(());
         }
     }
 
-    pub fn get_name(&self) -> &str {
+    pub fn get_name(&self) -> String {
         match self {
-            Command::Echo(_) => "echo",
-            Command::Ping(_) => "ping",
-            Command::Set(_) => "set",
-            Command::Get(_) => "get",
-            Command::Info(_) => "info",
-            Command::Replconf(_) => "resplconf",
-            Command::PSync(_) => "psync",
-            Command::Unknown(command) => command.get_name(),
+            Command::Echo(_) => "echo".to_string(),
+            Command::Ping(_) => "ping".to_string(),
+            Command::Set(_) => "set".to_string(),
+            Command::Get(_) => "get".to_string(),
+            Command::Info(_) => "info".to_string(),
+            Command::Replconf(_) => "resplconf".to_string(),
+            Command::PSync(_) => "psync".to_string(),
+            Command::Unknown(_) => "unknown".into(),
         }
     }
 

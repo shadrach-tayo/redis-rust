@@ -1,14 +1,21 @@
 use bytes::Bytes;
 
-use crate::{connection::Connection, frame::RESP, RespReader, RespReaderError};
+use crate::{connection::Connection, resp::RESP, RespReader, RespReaderError};
 
 #[derive(Debug, Default)]
 pub struct Replconf {
-    key: String,
+    // key: String,
     value: Vec<String>,
 }
 
 impl Replconf {
+    pub fn new(value: Vec<String>) -> Self {
+        // let iter = values.iter().cloned();
+        // let key = iter.next().clone().unwrap();
+        // let value = iter.cloned().collect::<Vec<String>>();
+
+        Replconf { value }
+    }
     /// Returns command name
     pub fn get_name(&self) -> &str {
         "REPLCONF"
@@ -20,7 +27,7 @@ impl Replconf {
     /// Parse next_string()? to get the config value
     ///
     pub fn from_parts(reader: &mut RespReader) -> Result<Self, RespReaderError> {
-        let key = reader.next_string()?;
+        // let key = reader.next_string()?;
         let mut values = vec![];
         let mut value = reader.next_string();
 
@@ -29,7 +36,7 @@ impl Replconf {
             value = reader.next_string();
         }
 
-        Ok(Replconf { key, value: values })
+        Ok(Replconf { value: values })
     }
 
     /// Apply the echo command and write to the Tcp connection stream
@@ -48,7 +55,7 @@ impl From<Replconf> for RESP {
     fn from(value: Replconf) -> Self {
         let mut resp = RESP::array();
         resp.push_bulk(Bytes::from("REPLCONF"));
-        resp.push_bulk(Bytes::from(value.key));
+        // resp.push_bulk(Bytes::from(value.key));
         for value in value.value.iter() {
             resp.push_bulk(Bytes::from(value.clone()));
         }
