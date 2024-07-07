@@ -23,8 +23,8 @@ use tokio::{
 };
 
 use crate::{
-    connection::Connection, ping::Ping, resp::RESP, Command, Db, DbGuard, PSync, Replconf,
-    ReplicaInfo, Role,
+    connection::Connection, ping::Ping, resp::RESP, CliConfig, Command, Db, DbGuard, PSync,
+    Replconf, ReplicaInfo, Role,
 };
 
 #[derive(Debug)]
@@ -62,8 +62,30 @@ pub struct Handler {
 /// for every accept tcp socket, a new async task is spawned to handle
 /// the connection.
 #[allow(unused)]
-pub async fn run(listener: TcpListener) -> crate::Result<()> {
-    todo!()
+pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> {
+    let db = DbGuard::new();
+    let mut server = Listener::new(listener, db);
+
+    // set  network config
+    server.set_network_config(("".into(), config.port));
+
+    if let Some(master) = config.master {
+        let connection = server.handshake(master).await?;
+        let _ = server.listen_to_master(connection.unwrap()).await?;
+    } else {
+        server.init_repl_state();
+    }
+
+    tokio::select! {
+        result = server.run() => {
+            if let Err(err) = result {
+                println!("Server error {:?}", err);
+                Err(err)
+            } else {
+                Ok(())
+            }
+        }
+    }
 }
 
 /// Listner struct implementations
@@ -87,8 +109,10 @@ impl Listener {
             .set_repl_id("8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".into());
     }
 
+    /// Initiate a handshake protocol between this replica node
+    /// and the master node
     pub async fn handshake(&mut self, master: ReplicaInfo) -> crate::Result<Option<Connection>> {
-        // send handshake to master
+        // Connect master node's port
         let addr = format!("{}:{}", master.host.clone(), master.port.clone());
         let stream = TcpStream::connect(addr).await?;
         let mut connection = Connection::new(stream, true);
@@ -96,39 +120,29 @@ impl Listener {
         // HANDSHAKE PROTOCOL
         // send PING
         connection.write_frame(&Ping::new(None).into()).await?;
-
         let _ = connection.read_resp().await?;
 
-        // send 1st REPLCONF
         let listening_conf = Replconf::new(vec![
             "listening-port".into(),
             self.network_config.as_ref().unwrap().1.to_string(),
         ]);
         connection.write_frame(&listening_conf.into()).await?;
-
         connection.read_resp().await?;
 
-        // send 2nd REPLCONF
         let replconf_capa = Replconf::new(vec!["capa".into(), "eof".into(), "psync2".into()]);
         connection.write_frame(&replconf_capa.into()).await?;
-
         let _ = connection.read_resp().await?;
 
-        // PSYNC with master
         connection
             .write_frame(&PSync::new("?".into(), "-1".into()).into())
             .await?;
+        let _psync_resp = connection.read_resp().await?;
 
-        let resp = connection.read_resp().await?;
-        println!("FULLSYNC 1: {:?}", resp);
-
-        let _resp = connection.read_resp().await?;
-        println!("Rdb file: {:?}", _resp);
+        let _empty_rdb_resp = connection.read_resp().await?;
 
         self.db.db().set_role(crate::Role::Slave);
         self.db.db().set_master(master);
 
-        println!("Handshake complete!!!");
         Ok(Some(connection))
     }
 
@@ -173,18 +187,12 @@ impl Listener {
             // accpet next tcp connection from client
             let stream = self.accept().await?;
 
-            // create channel for sending commands from non-slave connections
-            // to server to broadcast to slave connections
-            // let (handler_tx, mut handler_rcv) = mpsc::channel::<RESP>(10);
-
             println!("Accept new connection {:?}", stream.peer_addr());
 
             let mut handler = Handler {
                 connection: Connection::new(stream, false),
                 db: self.db.db(),
                 is_replica: false,
-                // command_sender: handler_tx,
-                // command_receiver: Arc::clone(&cmd_receiver),
             };
 
             let sender = Arc::clone(&sender);
@@ -198,19 +206,6 @@ impl Listener {
                     );
                 }
             });
-
-            // let command_broadcaster = Arc::clone(&cmd_tx);
-
-            // tokio::spawn(async move {
-            //     while let Some(resp) = handler_rcv.recv().await {
-            //         // todo: handle send error
-            //         // detect if handler is no longer up and running
-            //         // cut ties with handler
-            //         println!("Command To Replicate: {:?}", &resp);
-            //         let send_result = command_broadcaster.send(resp);
-            //         println!("Sent command to replicate")
-            //     }
-            // });
         }
     }
 

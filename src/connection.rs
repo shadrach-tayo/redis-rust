@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bytes::{Buf, BytesMut};
+use bytes::BytesMut;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -88,7 +88,9 @@ impl Connection {
                 // advance the connection buffer by the pos
                 // This discards the read buffer and next calls to read from the
                 // buffer starts from pos.
-                self.buffer.advance(pos);
+                // self.buffer.advance(pos);
+
+                let _ = self.buffer.split_to(pos);
                 return Ok(Some(resp));
             }
             // Not enough data present to parse a RESP
