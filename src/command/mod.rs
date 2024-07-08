@@ -7,7 +7,7 @@ pub mod replconf;
 pub mod set;
 pub mod unknown;
 
-use std::vec;
+use std::{sync::atomic::AtomicUsize, vec};
 
 use bytes::Bytes;
 use echo::Echo;
@@ -66,7 +66,12 @@ impl Command {
     /// Apply the command
     ///
     /// The response is written to the dst connection.
-    pub async fn apply(self, dst: &mut Connection, db: &Db) -> crate::Result<()> {
+    pub async fn apply(
+        self,
+        dst: &mut Connection,
+        db: &Db,
+        offset: Option<&AtomicUsize>,
+    ) -> crate::Result<()> {
         use Command::*;
 
         let resp = match self {
@@ -76,7 +81,7 @@ impl Command {
             Set(command) => command.apply(&db, dst).await,
             Get(command) => command.apply(&db, dst).await,
             Info(command) => command.apply(&db, dst).await,
-            Replconf(command) => command.apply(dst).await,
+            Replconf(command) => command.apply(dst, offset).await,
             PSync(command) => command.apply(&db, dst).await,
             // _ => unimplemented!(),
         };

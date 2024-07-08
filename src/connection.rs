@@ -3,7 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bytes::BytesMut;
+#[allow(unused_imports)]
+use bytes::{Buf, BytesMut};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -58,9 +59,10 @@ impl Connection {
     }
 
     /// Read a single RESP from the connection stream
-    pub async fn read_resp(&mut self) -> crate::Result<Option<RESP>> {
+    pub async fn read_resp(&mut self) -> crate::Result<Option<(RESP, usize)>> {
         loop {
             if let Some(resp) = self.parse_resp()? {
+                println!("Incoming {:?}", resp);
                 return Ok(Some(resp));
             }
 
@@ -76,8 +78,9 @@ impl Connection {
 
     /// Attempts to parse bytes from the buffered connection
     /// stream to a `RESP` data structure for processing
-    pub fn parse_resp(&mut self) -> crate::Result<Option<RESP>> {
+    pub fn parse_resp(&mut self) -> crate::Result<Option<(RESP, usize)>> {
         let mut cursor = Cursor::new(&self.buffer[..]);
+        let _size = self.buffer.len();
 
         match RESP::parse_resp(&mut cursor) {
             Ok(resp) => {
@@ -89,9 +92,9 @@ impl Connection {
                 // This discards the read buffer and next calls to read from the
                 // buffer starts from pos.
                 // self.buffer.advance(pos);
-
                 let _ = self.buffer.split_to(pos);
-                return Ok(Some(resp));
+
+                return Ok(Some((resp, pos)));
             }
             // Not enough data present to parse a RESP
             Err(crate::RESPError::Incomplete) => Ok(None),
@@ -101,7 +104,7 @@ impl Connection {
 
     /// Write a single `RESP` value to the underlying connection stream
     pub async fn write_frame(&mut self, resp: &RESP) -> io::Result<()> {
-        // println!("Write resp {:?}", &resp);
+        println!("Write resp {:?}", &resp);
         match resp {
             RESP::Array(list) => {
                 // Encode the RESP data type prefix for an array `*`

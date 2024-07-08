@@ -14,8 +14,15 @@
 
 // use std::net::TcpListener;
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
+use bytes::Bytes;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::broadcast,
@@ -153,19 +160,13 @@ impl Listener {
             connection,
             db: self.db.db(),
             is_replica: false,
-            // command_sender: tx,
-            // command_receiver: Arc::new(rx.into()),
         };
-
-        let (tx, _) = broadcast::channel::<RESP>(1);
-        let tx = Arc::new(tx);
-        let tx = Arc::clone(&tx);
 
         tokio::spawn(async move {
             // pass the connection to a new handler
             // in an async thread
             println!("Listen to master");
-            if let Err(err) = handler.run(tx).await {
+            if let Err(err) = handler.run_master().await {
                 println!("Master Handler error {:?}", err);
             }
         });
@@ -242,7 +243,7 @@ impl Handler {
         while !self.connection.closed {
             let resp = self.connection.read_resp().await?;
 
-            if let Some(resp) = resp {
+            if let Some((resp, _)) = resp {
                 let cmd_resp = resp.clone();
                 println!("Data: {:?}", &resp);
 
@@ -252,45 +253,85 @@ impl Handler {
                 if is_master {
                     if command.is_replicable_command() {
                         // broadcast command to server channel
-                        let sx = sender.send(cmd_resp).unwrap();
-                        println!("Command sent {:?}", sx);
+                        let _ = sender.send(cmd_resp).unwrap();
                     }
 
                     let command_name = &command.get_name();
 
                     let subscribe = command_name == "psync";
 
-                    command.apply(&mut self.connection, &self.db).await?;
+                    command.apply(&mut self.connection, &self.db, None).await?;
 
                     if subscribe {
                         // respond to psync command before polling for updates
 
-                        println!("Subscribe to Replication sync");
                         // mark connection as replica
                         self.is_replica = true;
 
                         let mut subscriber = sender.subscribe();
                         while let Ok(cmd) = subscriber.recv().await {
-                            println!("Command to replicate {:?}", &cmd);
                             let _ = self.connection.write_frame(&cmd).await;
+
+                            // send ack request
+                            // let mut resp = RESP::array();
+                            // resp.push_bulk(Bytes::from("REPLCONF GETACK *"));
+
+                            // let _ = self
+                            //     .connection
+                            //     .write_frame(&RESP::Array(vec![
+                            //         RESP::Bulk(Bytes::from("REPLCONF".as_bytes())),
+                            //         RESP::Bulk(Bytes::from("GETACK".as_bytes())),
+                            //         RESP::Bulk(Bytes::from("*".as_bytes())),
+                            //     ]))
+                            //     .await;
+                            // println!("ACK cmd sent")
                         }
                     }
                 } else {
-                    command.apply(&mut self.connection, &self.db).await?;
+                    command.apply(&mut self.connection, &self.db, None).await?;
                 }
             }
         }
         Ok(())
     }
+
+    /// Process a single inbound connection from master node
+    ///
+    /// Does the same as the run method above but
+    pub async fn run_master(&mut self) -> crate::Result<()> {
+        // let role = self.db.get_role();
+        let offset = AtomicUsize::new(0);
+
+        while !self.connection.closed {
+            let resp = self.connection.read_resp().await?;
+
+            let (resp, size) = match resp {
+                Some(resp_and_size) => resp_and_size,
+                None => continue,
+            };
+
+            println!("Replica::DATA: {:?}", &resp);
+
+            // Map RESP to a Command
+            let command = Command::from_resp(resp)?;
+
+            command
+                .apply(&mut self.connection, &self.db, Some(&offset))
+                .await?;
+
+            let _ = offset.fetch_add(size, Ordering::SeqCst);
+        }
+        Ok(())
+    }
 }
 
-pub async fn wait_for_response(connection: &mut Connection) -> crate::Result<Option<RESP>> {
-    let mut resp = connection.read_resp().await?;
-    while resp.is_none() {
-        resp = connection.read_resp().await?;
-    }
-    Ok(resp)
-}
+// pub async fn wait_for_response(connection: &mut Connection) -> crate::Result<Option<RESP>> {
+//     let mut resp = connection.read_resp().await?;
+//     while resp.is_none() {
+//         resp = connection.read_resp().await?;
+//     }
+//     Ok(resp)
+// }
 
 // pub async fn wait_for_rdb_response(connection: &mut Connection) -> crate::Result<Option<Bytes>> {
 //     let mut resp = connection.read_rdb().await?;

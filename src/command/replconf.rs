@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use bytes::Bytes;
 
 use crate::{connection::Connection, resp::RESP, RespReader, RespReaderError};
@@ -40,10 +42,34 @@ impl Replconf {
     }
 
     /// Apply the echo command and write to the Tcp connection stream
-    pub async fn apply(self, dst: &mut Connection) -> crate::Result<Option<RESP>> {
+    pub async fn apply(
+        self,
+        dst: &mut Connection,
+        offset: Option<&AtomicUsize>,
+    ) -> crate::Result<Option<RESP>> {
         #[allow(unused_assignments)]
-        let resp = RESP::Simple("OK".to_owned());
+        let mut resp = RESP::Simple("OK".to_owned());
 
+        let mut value_iter = self.value.iter();
+
+        let key = value_iter.next();
+        let cmd = value_iter.next();
+
+        match (key, cmd) {
+            (Some(key), Some(cmd))
+                if key.to_lowercase() == "getack" && cmd.to_lowercase() == "*" =>
+            {
+                let offset_bytes = offset.unwrap().load(Ordering::SeqCst).to_string();
+                resp = RESP::Array(vec![
+                    RESP::Bulk(Bytes::from("REPLCONF".as_bytes())),
+                    RESP::Bulk(Bytes::from("ACK".as_bytes())),
+                    RESP::Bulk(Bytes::from(offset_bytes)),
+                ]);
+            }
+            _ => (),
+        }
+
+        println!("Write REPLCONF RESPONSE {:?}", &resp);
         // eagerly send reply to replica connection
         dst.write_frame(&resp).await?;
 
