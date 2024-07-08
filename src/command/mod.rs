@@ -6,6 +6,7 @@ pub mod psync;
 pub mod replconf;
 pub mod set;
 pub mod unknown;
+pub mod wait;
 
 use std::{sync::atomic::AtomicUsize, vec};
 
@@ -17,8 +18,8 @@ use ping::Ping;
 pub use psync::PSync;
 pub use replconf::Replconf;
 use set::Set;
-// use tokio::sync::broadcast;
 use unknown::Unknown;
+use wait::Wait;
 
 use crate::{connection::Connection, resp::RESP, Db};
 
@@ -33,6 +34,7 @@ pub enum Command {
     Info(Info),
     Replconf(Replconf),
     PSync(PSync),
+    Wait(Wait),
 }
 
 impl Command {
@@ -53,6 +55,7 @@ impl Command {
             "info" => Command::Info(Info::from_parts(&mut resp_reader)?),
             "replconf" => Command::Replconf(Replconf::from_parts(&mut resp_reader)?),
             "psync" => Command::PSync(PSync::from_parts(&mut resp_reader)?),
+            "wait" => Command::Wait(Wait::from_parts(&mut resp_reader)?),
             _ => panic!("Unexpected command"),
         };
 
@@ -83,6 +86,7 @@ impl Command {
             Info(command) => command.apply(&db, dst).await,
             Replconf(command) => command.apply(dst, offset).await,
             PSync(command) => command.apply(&db, dst).await,
+            Wait(command) => command.apply(dst).await,
             // _ => unimplemented!(),
         };
 
@@ -106,6 +110,7 @@ impl Command {
             Command::Info(_) => "info".to_string(),
             Command::Replconf(_) => "resplconf".to_string(),
             Command::PSync(_) => "psync".to_string(),
+            Command::Wait(_) => "wait".to_string(),
             Command::Unknown(_) => "unknown".into(),
         }
     }

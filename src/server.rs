@@ -22,7 +22,6 @@ use std::{
     time::Duration,
 };
 
-use bytes::Bytes;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::broadcast,
@@ -154,8 +153,6 @@ impl Listener {
     }
 
     pub async fn listen_to_master(&mut self, connection: Connection) -> crate::Result<()> {
-        println!("Listen to master");
-
         let mut handler = Handler {
             connection,
             db: self.db.db(),
@@ -271,20 +268,6 @@ impl Handler {
                         let mut subscriber = sender.subscribe();
                         while let Ok(cmd) = subscriber.recv().await {
                             let _ = self.connection.write_frame(&cmd).await;
-
-                            // send ack request
-                            // let mut resp = RESP::array();
-                            // resp.push_bulk(Bytes::from("REPLCONF GETACK *"));
-
-                            // let _ = self
-                            //     .connection
-                            //     .write_frame(&RESP::Array(vec![
-                            //         RESP::Bulk(Bytes::from("REPLCONF".as_bytes())),
-                            //         RESP::Bulk(Bytes::from("GETACK".as_bytes())),
-                            //         RESP::Bulk(Bytes::from("*".as_bytes())),
-                            //     ]))
-                            //     .await;
-                            // println!("ACK cmd sent")
                         }
                     }
                 } else {

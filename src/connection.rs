@@ -62,7 +62,7 @@ impl Connection {
     pub async fn read_resp(&mut self) -> crate::Result<Option<(RESP, usize)>> {
         loop {
             if let Some(resp) = self.parse_resp()? {
-                println!("Incoming {:?}", resp);
+                // println!("Incoming {:?}", resp);
                 return Ok(Some(resp));
             }
 
@@ -104,7 +104,7 @@ impl Connection {
 
     /// Write a single `RESP` value to the underlying connection stream
     pub async fn write_frame(&mut self, resp: &RESP) -> io::Result<()> {
-        println!("Write resp {:?}", &resp);
+        // println!("Write resp {:?}", &resp);
         match resp {
             RESP::Array(list) => {
                 // Encode the RESP data type prefix for an array `*`
