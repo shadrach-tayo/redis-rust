@@ -6,6 +6,7 @@ use crate::{ReplicaInfo, Role};
 pub struct CliConfig {
     pub port: u64,
     pub master: Option<ReplicaInfo>,
+    pub is_replication: bool,
 }
 
 pub fn parse_config(args: &mut Args) -> CliConfig {
@@ -13,6 +14,7 @@ pub fn parse_config(args: &mut Args) -> CliConfig {
     let mut config = CliConfig {
         port: 6379,
         master: None,
+        is_replication: false,
     };
 
     // let mut port: u64 = 6379;
@@ -30,6 +32,7 @@ pub fn parse_config(args: &mut Args) -> CliConfig {
             Some(s) if s == "--replicaof".to_string() => match args.next() {
                 Some(arg) => {
                     master_info = arg.clone();
+                    config.is_replication = true;
                 }
                 None => panic!("Could not parse replica info "),
             },
@@ -55,4 +58,19 @@ pub fn parse_config(args: &mut Args) -> CliConfig {
     }
 
     config
+}
+
+#[derive(Debug, Clone)]
+pub struct ServerConfig {
+    pub role: Role,
+    pub network_config: Option<(String, u64)>,
+}
+
+impl ServerConfig {
+    pub fn new(network: Option<(String, u64)>, role: Role) -> Self {
+        ServerConfig {
+            network_config: network,
+            role,
+        }
+    }
 }

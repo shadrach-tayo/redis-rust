@@ -74,6 +74,7 @@ impl Command {
         dst: &mut Connection,
         db: &Db,
         offset: Option<&AtomicUsize>,
+        replicas: &AtomicUsize,
     ) -> crate::Result<()> {
         use Command::*;
 
@@ -86,7 +87,7 @@ impl Command {
             Info(command) => command.apply(&db, dst).await,
             Replconf(command) => command.apply(dst, offset).await,
             PSync(command) => command.apply(&db, dst).await,
-            Wait(command) => command.apply(dst).await,
+            Wait(command) => command.apply(dst, replicas).await,
             // _ => unimplemented!(),
         };
 

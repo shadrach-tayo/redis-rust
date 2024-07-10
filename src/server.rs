@@ -29,8 +29,8 @@ use tokio::{
 };
 
 use crate::{
-    connection::Connection, ping::Ping, resp::RESP, CliConfig, Command, Db, DbGuard, PSync,
-    Replconf, ReplicaInfo, Role,
+    config::ServerConfig, connection::Connection, ping::Ping, resp::RESP, CliConfig, Command, Db,
+    DbGuard, PSync, Replconf, ReplicaInfo, Role,
 };
 
 #[derive(Debug)]
@@ -40,11 +40,16 @@ pub struct Listener {
 
     // Tcp listner
     pub listener: TcpListener,
-    pub master_connection: Option<Connection>,
+
+    // pub master_connection: Option<Connection>,
 
     // current node's network config
     // (host, port)
-    network_config: Option<(String, u64)>,
+    // network_config: Option<(String, u64)>,
+    config: ServerConfig,
+
+    // keep track of connected slave
+    slave_connections: Arc<AtomicUsize>,
 }
 
 pub struct Handler {
@@ -60,6 +65,12 @@ pub struct Handler {
 
     // Marker to indicate if wraped connection is a replica or not
     pub is_replica: bool,
+
+    // keep track of server config
+    config: ServerConfig,
+
+    // keep track of connected slave
+    slave_connections: Arc<AtomicUsize>,
 }
 
 /// Run the redis server
@@ -69,11 +80,22 @@ pub struct Handler {
 /// the connection.
 #[allow(unused)]
 pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> {
+    let role = if config.is_replication {
+        Role::Slave
+    } else {
+        Role::Master
+    };
+
+    let server_config = ServerConfig {
+        network_config: Some(("".into(), config.port)),
+        role,
+    };
+
     let db = DbGuard::new();
-    let mut server = Listener::new(listener, db);
+    let mut server = Listener::new(listener, db, server_config);
 
     // set  network config
-    server.set_network_config(("".into(), config.port));
+    // server.set_network_config(("".into(), config.port));
 
     if let Some(master) = config.master {
         let connection = server.handshake(master).await?;
@@ -96,18 +118,18 @@ pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> 
 
 /// Listner struct implementations
 impl Listener {
-    pub fn new(listener: TcpListener, db: DbGuard) -> Self {
+    pub fn new(listener: TcpListener, db: DbGuard, config: ServerConfig) -> Self {
         Self {
             listener,
             db,
-            master_connection: None,
-            network_config: None,
+            config,
+            slave_connections: Arc::new(AtomicUsize::new(0)),
         }
     }
 
-    pub fn set_network_config(&mut self, config: (String, u64)) {
-        self.network_config = Some(config);
-    }
+    // pub fn set_network_config(&mut self, config: (String, u64)) {
+    //     // self.network_config = Some(config);
+    // }
     pub fn init_repl_state(&mut self) {
         self.db.db().set_role(Role::Master);
         self.db
@@ -130,7 +152,7 @@ impl Listener {
 
         let listening_conf = Replconf::new(vec![
             "listening-port".into(),
-            self.network_config.as_ref().unwrap().1.to_string(),
+            self.config.network_config.as_ref().unwrap().1.to_string(),
         ]);
         connection.write_frame(&listening_conf.into()).await?;
         connection.read_resp().await?;
@@ -157,6 +179,8 @@ impl Listener {
             connection,
             db: self.db.db(),
             is_replica: false,
+            slave_connections: self.slave_connections.clone(),
+            config: self.config.clone(),
         };
 
         tokio::spawn(async move {
@@ -175,7 +199,7 @@ impl Listener {
         println!("Listening on: {:?}", self.listener.local_addr());
 
         // create a channel for listening for replicable commands
-        // to be sent to replica connections
+        // to be sent to slave connections
         let (sender, _rx) = broadcast::channel::<RESP>(16);
 
         // let cmd_receiver = Arc::new(Mutex::new(cmd_rcv));
@@ -191,6 +215,8 @@ impl Listener {
                 connection: Connection::new(stream, false),
                 db: self.db.db(),
                 is_replica: false,
+                config: self.config.clone(),
+                slave_connections: self.slave_connections.clone(),
             };
 
             let sender = Arc::clone(&sender);
@@ -235,44 +261,56 @@ impl Handler {
     /// Request RESP are parsed from the socket buffer and processed using `Command`
     /// Response is written back to the socket
     pub async fn run(&mut self, sender: Arc<broadcast::Sender<RESP>>) -> crate::Result<()> {
-        let role = self.db.get_role();
-        let is_master = role == "master";
+        // let role = self.db.get_role();
+        // let is_master = role == "master";
         while !self.connection.closed {
             let resp = self.connection.read_resp().await?;
 
             if let Some((resp, _)) = resp {
-                let cmd_resp = resp.clone();
+                // let cmd_resp = resp.clone();
                 println!("Data: {:?}", &resp);
 
                 // Map RESP to a Command
-                let command = Command::from_resp(resp)?;
+                let command = Command::from_resp(resp.clone())?;
 
-                if is_master {
-                    if command.is_replicable_command() {
-                        // broadcast command to server channel
-                        let _ = sender.send(cmd_resp).unwrap();
-                    }
-
-                    let command_name = &command.get_name();
-
-                    let subscribe = command_name == "psync";
-
-                    command.apply(&mut self.connection, &self.db, None).await?;
-
-                    if subscribe {
-                        // respond to psync command before polling for updates
-
-                        // mark connection as replica
-                        self.is_replica = true;
-
-                        let mut subscriber = sender.subscribe();
-                        while let Ok(cmd) = subscriber.recv().await {
-                            let _ = self.connection.write_frame(&cmd).await;
+                match self.config.role {
+                    Role::Master => match command {
+                        Command::Set(_) => {
+                            let _ = sender.send(resp).unwrap();
                         }
-                    }
-                } else {
-                    command.apply(&mut self.connection, &self.db, None).await?;
+                        Command::PSync(_) => {
+                            self.is_replica = true;
+                            self.slave_connections.fetch_add(1, Ordering::SeqCst);
+
+                            command
+                                .apply(
+                                    &mut self.connection,
+                                    &self.db,
+                                    None,
+                                    &self.slave_connections,
+                                )
+                                .await?;
+
+                            let mut subscriber = sender.subscribe();
+                            while let Ok(cmd) = subscriber.recv().await {
+                                let _ = self.connection.write_frame(&cmd).await;
+                            }
+
+                            return Ok(());
+                        }
+                        _ => {}
+                    },
+                    Role::Slave => {}
                 }
+
+                command
+                    .apply(
+                        &mut self.connection,
+                        &self.db,
+                        None,
+                        &self.slave_connections,
+                    )
+                    .await?;
             }
         }
         Ok(())
@@ -284,6 +322,7 @@ impl Handler {
     pub async fn run_master(&mut self) -> crate::Result<()> {
         // let role = self.db.get_role();
         let offset = AtomicUsize::new(0);
+        let slave_count = AtomicUsize::new(0);
 
         while !self.connection.closed {
             let resp = self.connection.read_resp().await?;
@@ -299,7 +338,7 @@ impl Handler {
             let command = Command::from_resp(resp)?;
 
             command
-                .apply(&mut self.connection, &self.db, Some(&offset))
+                .apply(&mut self.connection, &self.db, Some(&offset), &slave_count)
                 .await?;
 
             let _ = offset.fetch_add(size, Ordering::SeqCst);
@@ -307,23 +346,3 @@ impl Handler {
         Ok(())
     }
 }
-
-// pub async fn wait_for_response(connection: &mut Connection) -> crate::Result<Option<RESP>> {
-//     let mut resp = connection.read_resp().await?;
-//     while resp.is_none() {
-//         resp = connection.read_resp().await?;
-//     }
-//     Ok(resp)
-// }
-
-// pub async fn wait_for_rdb_response(connection: &mut Connection) -> crate::Result<Option<Bytes>> {
-//     let mut resp = connection.read_rdb().await?;
-//     println!("Wait for RDB RESP......{:?}", &resp);
-//     while resp.is_none() {
-//         resp = connection.read_rdb().await?;
-//         time::sleep(Duration::from_millis(10)).await;
-//     }
-
-//     println!("RDB RESP {:?} ", &resp);
-//     Ok(resp)
-// }

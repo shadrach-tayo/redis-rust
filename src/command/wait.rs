@@ -1,20 +1,17 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use bytes::Bytes;
 
 use crate::{connection::Connection, resp::RESP, RespReader, RespReaderError};
 
 #[derive(Debug, Default)]
 pub struct Wait {
-    // key: String,
     pub no_of_replicas: u64,
     pub timeout: u64,
 }
 
 impl Wait {
     pub fn new(replicas: u64, timeout: u64) -> Self {
-        // let iter = values.iter().cloned();
-        // let key = iter.next().clone().unwrap();
-        // let value = iter.cloned().collect::<Vec<String>>();
-
         Wait {
             no_of_replicas: replicas,
             timeout,
@@ -41,8 +38,17 @@ impl Wait {
     }
 
     /// Apply the echo command and write to the Tcp connection stream
-    pub async fn apply(self, dst: &mut Connection) -> crate::Result<Option<RESP>> {
-        let resp = RESP::Integer(0);
+    pub async fn apply(
+        self,
+        dst: &mut Connection,
+        replicas: &AtomicUsize,
+    ) -> crate::Result<Option<RESP>> {
+        let int = replicas
+            .load(Ordering::SeqCst)
+            .to_string()
+            .parse()
+            .unwrap_or(0);
+        let resp = RESP::Integer(int);
 
         dst.write_frame(&resp).await?;
 
