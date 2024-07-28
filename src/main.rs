@@ -22,7 +22,3 @@ async fn main() -> Result<(), Error> {
 
     Ok(())
 }
-
-// Refactoring todos
-// Maintain a List of connected replicas on a master node
-// Implement WAIT with multiple commands

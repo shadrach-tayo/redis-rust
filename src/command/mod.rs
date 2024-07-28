@@ -1,3 +1,4 @@
+pub mod config;
 pub mod echo;
 pub mod get;
 pub mod info;
@@ -14,6 +15,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use config::Config;
 use echo::Echo;
 use get::Get;
 use info::Info;
@@ -30,14 +32,15 @@ use crate::{config::ServerConfig, connection::Connection, resp::RESP, Db};
 /// Enum of supported Protocol Commands
 #[derive(Debug)]
 pub enum Command {
-    Ping(Ping),
+    Config(Config),
     Echo(Echo),
-    Unknown(Unknown),
-    Set(Set),
     Get(Get),
     Info(Info),
+    Ping(Ping),
     Replconf(Replconf),
     PSync(PSync),
+    Set(Set),
+    Unknown(Unknown),
     Wait(Wait),
 }
 
@@ -53,6 +56,7 @@ impl Command {
 
         let command = match command_name.as_str() {
             "echo" => Command::Echo(Echo::from_parts(&mut resp_reader)?),
+            "config" => Command::Config(Config::from_parts(&mut resp_reader)?),
             "ping" => Command::Ping(Ping::from_parts(&mut resp_reader)?),
             "set" => Command::Set(Set::from_parts(&mut resp_reader)?),
             "get" => Command::Get(Get::from_parts(&mut resp_reader)?),
@@ -84,6 +88,7 @@ impl Command {
         use Command::*;
 
         let resp = match self {
+            Config(command) => command.apply(config).await,
             Echo(command) => command.apply(dst).await,
             Ping(command) => command.apply(dst).await,
             Unknown(command) => command.apply(dst).await,
@@ -108,6 +113,7 @@ impl Command {
 
     pub fn get_name(&self) -> String {
         match self {
+            Command::Config(_) => "config".to_string(),
             Command::Echo(_) => "echo".to_string(),
             Command::Ping(_) => "ping".to_string(),
             Command::Set(_) => "set".to_string(),

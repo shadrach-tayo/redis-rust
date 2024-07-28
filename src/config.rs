@@ -10,14 +10,15 @@ pub struct CliConfig {
     pub port: u64,
     pub master: Option<ReplicaInfo>,
     pub is_replication: bool,
+    pub dir: Option<String>,
+    pub dbfilename: Option<String>,
 }
 
 pub fn parse_config(args: &mut Args) -> CliConfig {
     const MSG: &str = "Pass --port <port> argument to start command";
     let mut config = CliConfig {
         port: 6379,
-        master: None,
-        is_replication: false,
+        ..Default::default()
     };
 
     // let mut port: u64 = 6379;
@@ -38,6 +39,18 @@ pub fn parse_config(args: &mut Args) -> CliConfig {
                     config.is_replication = true;
                 }
                 None => panic!("Could not parse replica info "),
+            },
+            Some(s) if s == "--dir".to_string() => match args.next() {
+                Some(value) => {
+                    config.dir = Some(value);
+                }
+                None => panic!("Could not parse rdb dir parameter"),
+            },
+            Some(s) if s == "--dbfilename".to_string() => match args.next() {
+                Some(value) => {
+                    config.dbfilename = Some(value);
+                }
+                None => panic!("Could not parse dbfilename parameter"),
             },
             Some(s) => {
                 println!("arg {}", s);
@@ -69,6 +82,8 @@ pub struct ServerConfig {
     pub master_repl_offset: Arc<AtomicU64>,
     pub master_repl_id: Option<String>,
     pub network_config: Option<(String, u64)>,
+    pub dir: Option<String>,
+    pub dbfilename: Option<String>,
 }
 
 impl ServerConfig {
@@ -77,11 +92,15 @@ impl ServerConfig {
         role: Role,
         master_repl_id: Option<String>,
         master_repl_offset: Arc<AtomicU64>,
+        dir: Option<String>,
+        dbfilename: Option<String>,
     ) -> Self {
         ServerConfig {
             role,
             master_repl_id,
             master_repl_offset,
+            dir,
+            dbfilename,
             network_config: network,
         }
     }

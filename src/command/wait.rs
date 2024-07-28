@@ -73,11 +73,8 @@ impl Wait {
         let offset = config.master_repl_offset.load(Ordering::SeqCst);
 
         let check_wait_task = tokio::spawn(async move {
+            // Skip wait logic if no repl commands have been sent
             if config.master_repl_offset.load(Ordering::SeqCst) == 0 {
-                println!(
-                    "Break Loop: Master repl offset is: {}",
-                    config.master_repl_offset.load(Ordering::SeqCst)
-                );
                 // if no commands, set no of synced replicas to number of connected replicas
                 synced_replicas_count.store(no_of_replicas, Ordering::SeqCst);
                 return;
@@ -85,14 +82,11 @@ impl Wait {
 
             // maintain a list of the indexes of synced replicas
             let mut skips = vec![];
-            // let mut send_skips = vec![];
             let replica_connections = &mut *replicas.write().await;
 
             // Send REPL CONF GETACK to all replicas
             for (idx, connection) in replica_connections.into_iter().enumerate() {
                 // send a GETACK command
-                // send and receive ack
-                // let _ = connection.flush_stream().await;
                 let send_ack_resp = tokio::time::timeout(
                     Duration::from_millis(5),
                     connection.write_frame(&RESP::Array(vec![
@@ -115,24 +109,26 @@ impl Wait {
                     println!("Failed to send ACK to Replica: {idx}");
                     continue;
                 }
+
+                // add hardcoded len of REPLCONF GETACK * (37)
+                connection.repl_offset.fetch_add(37, Ordering::SeqCst);
             }
 
             // loop through all replicas
             loop {
-                // break loop and return if synced_replicas >= target_replicas
+                // Break out of loop if sync target is reached
                 if synced_replicas_count.load(Ordering::SeqCst) >= target_replicas {
                     break;
                 }
 
                 // enumerate over replica connections
                 for (idx, connection) in replica_connections.into_iter().enumerate() {
-                    // if can skip replica, skip look branch
+                    // skip synced replica indexes
                     if skips.contains(&idx) {
                         continue;
                     }
 
-                    // wait for resp
-                    // todo: make this non-blocking with tokio::timeout()
+                    // attempt to read response for ACK command
                     let ack_resp =
                         tokio::time::timeout(Duration::from_millis(2), connection.read_resp())
                             .await;
@@ -140,15 +136,12 @@ impl Wait {
                     let ack_resp = match ack_resp {
                         Ok(r) => r,
                         Err(_) => {
-                            // println!("Failed to get reply from Replica: {idx}");
-                            // skips.push(idx);
                             continue;
                         }
                     };
 
                     match ack_resp {
                         Ok(Some((resp, _))) => {
-                            println!("Replica {}, ACK Resp: {:?}", idx + 1, &resp);
                             let command = Command::from_resp(resp);
 
                             if !command.is_ok() {
@@ -166,20 +159,12 @@ impl Wait {
                                         .parse()
                                         .unwrap_or(0);
 
-                                    // let bytes_len = connection.repl_offset.load(Ordering::SeqCst);
-                                    println!("Replica {}, Offset: {offset}, Ack: {ack}", idx + 1);
-
                                     if ack >= offset {
                                         skips.push(idx);
                                         synced_replicas_count.fetch_add(1, Ordering::SeqCst);
                                     }
-
-                                    // add hardcoded len of REPLCONF GETACK * (37)
-                                    connection.repl_offset.fetch_add(37, Ordering::SeqCst);
                                 }
                                 _ => {
-                                    // add hardcoded len of REPLCONF GETACK * (37)
-                                    // connection.repl_offset.fetch_add(37, Ordering::SeqCst);
                                     continue;
                                 }
                             }

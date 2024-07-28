@@ -84,14 +84,17 @@ pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> 
     let role = if config.is_replication {
         Role::Slave
     } else {
+        // TODO: use random strng generator
         master_repl_id = Some("8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".into());
         Role::Master
     };
 
     let mut server_config = ServerConfig {
-        network_config: Some(("".into(), config.port)),
         role,
         master_repl_id,
+        dir: config.dir.clone(),
+        dbfilename: config.dir.clone(),
+        network_config: Some(("".into(), config.port)),
         master_repl_offset: Arc::new(AtomicU64::new(0)),
     };
 
