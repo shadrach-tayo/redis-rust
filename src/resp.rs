@@ -89,15 +89,23 @@ impl RESP {
                         return Err(RESPError::Incomplete);
                     }
 
+                    // println!(
+                    //     "Bulk, len: {len}, data: {:?}",
+                    //     String::from_utf8_lossy(&cursor.chunk()[..len])
+                    // );
                     let data = Bytes::copy_from_slice(&cursor.chunk()[..len]);
-
                     skip(cursor, len)?;
 
                     let pos = cursor.position() as usize;
 
                     let clrf = if cursor.has_remaining() {
+                        println!(
+                            "Check CLRF {:?}",
+                            String::from_utf8_lossy(&cursor.get_ref()[pos..])
+                        );
                         &cursor.get_ref()[pos..pos + 2] == b"\r\n"
                     } else {
+                        println!("File {:?}", String::from_utf8_lossy(&cursor.chunk()[..]));
                         false
                     };
 

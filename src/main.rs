@@ -24,8 +24,5 @@ async fn main() -> Result<(), Error> {
 }
 
 // Refactoring todos
-// Make Replication RESP composable FROM commands ✅
-// Implement File format ✅
-// Move handshake to handler ✅
-// Maintain a List of connected slaves on a master node
-// Refactor handler::run() to make it more readable ✅
+// Maintain a List of connected replicas on a master node
+// Implement WAIT with multiple commands

@@ -16,7 +16,7 @@
 
 use std::{
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
@@ -24,7 +24,7 @@ use std::{
 
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::broadcast,
+    sync::{broadcast, RwLock},
     time,
 };
 
@@ -49,7 +49,7 @@ pub struct Listener {
     config: ServerConfig,
 
     // keep track of connected slave
-    slave_connections: Arc<AtomicUsize>,
+    replicas: Arc<RwLock<Vec<Connection>>>,
 }
 
 pub struct Handler {
@@ -67,10 +67,10 @@ pub struct Handler {
     pub is_replica: bool,
 
     // keep track of server config
-    config: ServerConfig,
+    pub config: ServerConfig,
 
     // keep track of connected slave
-    slave_connections: Arc<AtomicUsize>,
+    pub replicas: Arc<RwLock<Vec<Connection>>>,
 }
 
 /// Run the redis server
@@ -80,22 +80,23 @@ pub struct Handler {
 /// the connection.
 #[allow(unused)]
 pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> {
+    let mut master_repl_id = None;
     let role = if config.is_replication {
         Role::Slave
     } else {
+        master_repl_id = Some("8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".into());
         Role::Master
     };
 
-    let server_config = ServerConfig {
+    let mut server_config = ServerConfig {
         network_config: Some(("".into(), config.port)),
         role,
+        master_repl_id,
+        master_repl_offset: Arc::new(AtomicU64::new(0)),
     };
 
     let db = DbGuard::new();
     let mut server = Listener::new(listener, db, server_config);
-
-    // set  network config
-    // server.set_network_config(("".into(), config.port));
 
     if let Some(master) = config.master {
         let connection = server.handshake(master).await?;
@@ -123,7 +124,7 @@ impl Listener {
             listener,
             db,
             config,
-            slave_connections: Arc::new(AtomicUsize::new(0)),
+            replicas: Arc::new(RwLock::new(vec![])),
         }
     }
 
@@ -179,7 +180,7 @@ impl Listener {
             connection,
             db: self.db.db(),
             is_replica: false,
-            slave_connections: self.slave_connections.clone(),
+            replicas: self.replicas.clone(),
             config: self.config.clone(),
         };
 
@@ -211,12 +212,12 @@ impl Listener {
 
             println!("Accept new connection {:?}", stream.peer_addr());
 
-            let mut handler = Handler {
+            let handler = Handler {
                 connection: Connection::new(stream, false),
                 db: self.db.db(),
                 is_replica: false,
                 config: self.config.clone(),
-                slave_connections: self.slave_connections.clone(),
+                replicas: self.replicas.clone(),
             };
 
             let sender = Arc::clone(&sender);
@@ -224,10 +225,7 @@ impl Listener {
                 // pass the connection to a new handler
                 // in an async thread
                 if let Err(err) = handler.run(sender).await {
-                    println!(
-                        "Handler error {:?}, Is Replica: {}",
-                        err, handler.is_replica
-                    );
+                    println!("Handler error {:?}", err,);
                 }
             });
         }
@@ -260,58 +258,91 @@ impl Handler {
     ///
     /// Request RESP are parsed from the socket buffer and processed using `Command`
     /// Response is written back to the socket
-    pub async fn run(&mut self, sender: Arc<broadcast::Sender<RESP>>) -> crate::Result<()> {
-        // let role = self.db.get_role();
-        // let is_master = role == "master";
+    pub async fn run(mut self, _sender: Arc<broadcast::Sender<RESP>>) -> crate::Result<()> {
         while !self.connection.closed {
             let resp = self.connection.read_resp().await?;
 
-            if let Some((resp, _)) = resp {
-                // let cmd_resp = resp.clone();
-                println!("Data: {:?}", &resp);
+            let (resp, command_byte_size) = match resp {
+                Some((resp, bytes_size)) => (resp, bytes_size),
+                None => continue,
+            };
 
-                // Map RESP to a Command
-                let command = Command::from_resp(resp.clone())?;
+            println!("Data: {:?}", &resp);
 
-                match self.config.role {
-                    Role::Master => match command {
-                        Command::Set(_) => {
-                            let _ = sender.send(resp).unwrap();
-                        }
-                        Command::PSync(_) => {
-                            self.is_replica = true;
-                            self.slave_connections.fetch_add(1, Ordering::SeqCst);
+            // Map RESP to a Command
+            let command = Command::from_resp(resp.clone())?;
 
-                            command
-                                .apply(
-                                    &mut self.connection,
-                                    &self.db,
-                                    None,
-                                    &self.slave_connections,
-                                )
-                                .await?;
+            match self.config.role {
+                Role::Master => match command {
+                    Command::Set(_) => {
+                        let replicas = &mut *self.replicas.write().await;
+                        let mut remove = vec![];
 
-                            let mut subscriber = sender.subscribe();
-                            while let Ok(cmd) = subscriber.recv().await {
-                                let _ = self.connection.write_frame(&cmd).await;
+                        for (idx, connection) in replicas.into_iter().enumerate() {
+                            let repl_result = connection.write_frame(&resp).await;
+                            println!(
+                                "Replicate: {}, offset: {:?}, Result: {:?}",
+                                idx + 1,
+                                connection.repl_offset.load(Ordering::SeqCst),
+                                repl_result
+                            );
+
+                            if repl_result.is_err() {
+                                remove.push(idx);
                             }
-
-                            return Ok(());
                         }
-                        _ => {}
-                    },
-                    Role::Slave => {}
-                }
 
-                command
-                    .apply(
-                        &mut self.connection,
-                        &self.db,
-                        None,
-                        &self.slave_connections,
-                    )
-                    .await?;
+                        for idx in remove.iter() {
+                            replicas.swap_remove(*idx);
+                            println!("Remove Replica: {idx}");
+                        }
+                    }
+                    Command::PSync(_) => {
+                        command
+                            .apply(
+                                &mut self.connection,
+                                &self.db,
+                                None,
+                                self.replicas.clone(),
+                                self.config.clone(),
+                            )
+                            .await?;
+
+                        // reset repl offset
+                        // self.connection.flush_stream().await?;
+                        self.connection.repl_offset.store(0, Ordering::SeqCst);
+                        self.replicas.write().await.push(self.connection);
+                        return Ok(());
+                    }
+                    _ => {}
+                },
+                Role::Slave => {}
             }
+
+            if command.affects_offset() {
+                self.config
+                    .master_repl_offset
+                    .fetch_add(command_byte_size as u64, Ordering::SeqCst);
+                for connection in &mut *self.replicas.write().await {
+                    connection
+                        .repl_offset
+                        .fetch_add(command_byte_size as u64, Ordering::SeqCst);
+                }
+                println!(
+                    "Increase Master_repl_offset: {}",
+                    self.config.master_repl_offset.load(Ordering::SeqCst)
+                );
+            }
+
+            command
+                .apply(
+                    &mut self.connection,
+                    &self.db,
+                    None,
+                    self.replicas.clone(),
+                    self.config.clone(),
+                )
+                .await?;
         }
         Ok(())
     }
@@ -322,7 +353,7 @@ impl Handler {
     pub async fn run_master(&mut self) -> crate::Result<()> {
         // let role = self.db.get_role();
         let offset = AtomicUsize::new(0);
-        let slave_count = AtomicUsize::new(0);
+        // let slave_count = AtomicUsize::new(0);
 
         while !self.connection.closed {
             let resp = self.connection.read_resp().await?;
@@ -332,13 +363,19 @@ impl Handler {
                 None => continue,
             };
 
-            println!("Replica::DATA: {:?}", &resp);
+            println!("Replica::DATA: {:?}, total_offset: {:?}", &resp, offset);
 
             // Map RESP to a Command
             let command = Command::from_resp(resp)?;
 
             command
-                .apply(&mut self.connection, &self.db, Some(&offset), &slave_count)
+                .apply(
+                    &mut self.connection,
+                    &self.db,
+                    Some(&offset),
+                    self.replicas.clone(),
+                    self.config.clone(),
+                )
                 .await?;
 
             let _ = offset.fetch_add(size, Ordering::SeqCst);

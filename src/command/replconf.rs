@@ -7,16 +7,12 @@ use crate::{connection::Connection, resp::RESP, RespReader, RespReaderError};
 #[derive(Debug, Default)]
 pub struct Replconf {
     // key: String,
-    value: Vec<String>,
+    pub values: Vec<String>,
 }
 
 impl Replconf {
-    pub fn new(value: Vec<String>) -> Self {
-        // let iter = values.iter().cloned();
-        // let key = iter.next().clone().unwrap();
-        // let value = iter.cloned().collect::<Vec<String>>();
-
-        Replconf { value }
+    pub fn new(values: Vec<String>) -> Self {
+        Replconf { values }
     }
     /// Returns command name
     pub fn get_name(&self) -> &str {
@@ -38,7 +34,7 @@ impl Replconf {
             value = reader.next_string();
         }
 
-        Ok(Replconf { value: values })
+        Ok(Replconf { values })
     }
 
     /// Apply the echo command and write to the Tcp connection stream
@@ -50,7 +46,7 @@ impl Replconf {
         #[allow(unused_assignments)]
         let mut resp = RESP::Simple("OK".to_owned());
 
-        let mut value_iter = self.value.iter();
+        let mut value_iter = self.values.iter();
 
         let key = value_iter.next();
         let cmd = value_iter.next();
@@ -69,7 +65,7 @@ impl Replconf {
             _ => (),
         }
 
-        println!("Write REPLCONF RESPONSE {:?}", &resp);
+        // println!("Write RESPONSE {:?}", &resp);
         // eagerly send reply to replica connection
         dst.write_frame(&resp).await?;
 
@@ -78,11 +74,10 @@ impl Replconf {
 }
 
 impl From<Replconf> for RESP {
-    fn from(value: Replconf) -> Self {
+    fn from(this: Replconf) -> Self {
         let mut resp = RESP::array();
         resp.push_bulk(Bytes::from("REPLCONF"));
-        // resp.push_bulk(Bytes::from(value.key));
-        for value in value.value.iter() {
+        for value in this.values.iter() {
             resp.push_bulk(Bytes::from(value.clone()));
         }
         resp

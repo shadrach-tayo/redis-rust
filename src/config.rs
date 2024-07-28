@@ -1,4 +1,7 @@
-use std::env::Args;
+use std::{
+    env::Args,
+    sync::{atomic::AtomicU64, Arc},
+};
 
 use crate::{ReplicaInfo, Role};
 
@@ -63,14 +66,23 @@ pub fn parse_config(args: &mut Args) -> CliConfig {
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub role: Role,
+    pub master_repl_offset: Arc<AtomicU64>,
+    pub master_repl_id: Option<String>,
     pub network_config: Option<(String, u64)>,
 }
 
 impl ServerConfig {
-    pub fn new(network: Option<(String, u64)>, role: Role) -> Self {
+    pub fn new(
+        network: Option<(String, u64)>,
+        role: Role,
+        master_repl_id: Option<String>,
+        master_repl_offset: Arc<AtomicU64>,
+    ) -> Self {
         ServerConfig {
-            network_config: network,
             role,
+            master_repl_id,
+            master_repl_offset,
+            network_config: network,
         }
     }
 }

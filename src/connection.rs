@@ -1,5 +1,6 @@
 use std::{
     io::{self, Cursor},
+    sync::atomic::AtomicU64,
     time::{Duration, Instant},
 };
 
@@ -38,6 +39,10 @@ pub struct Connection {
     pub closed: bool,
 
     pub is_master: bool,
+
+    // keep track of total bytes of replica commands
+    // sent to this connection
+    pub repl_offset: AtomicU64,
 }
 
 /// Read bytes from tcpStream and convert to RESP for processing
@@ -51,7 +56,14 @@ impl Connection {
             closed: false,
             last_active_time: None,
             is_master,
+            repl_offset: AtomicU64::new(0),
         }
+    }
+
+    pub fn get_addr(&mut self) -> String {
+        self.stream
+            .local_addr()
+            .map_or("UknownSocketAddr".to_string(), |socket| socket.to_string())
     }
 
     pub async fn flush_stream(&mut self) -> io::Result<()> {
@@ -81,7 +93,10 @@ impl Connection {
     pub fn parse_resp(&mut self) -> crate::Result<Option<(RESP, usize)>> {
         let mut cursor = Cursor::new(&self.buffer[..]);
         let _size = self.buffer.len();
-
+        // println!(
+        //     "Incoming Data {:?}",
+        //     String::from_utf8_lossy(&cursor.chunk()[..])
+        // );
         match RESP::parse_resp(&mut cursor) {
             Ok(resp) => {
                 // get the current position of the cursor after the resp is

@@ -8,7 +8,10 @@ pub mod set;
 pub mod unknown;
 pub mod wait;
 
-use std::{sync::atomic::AtomicUsize, vec};
+use std::{
+    sync::{atomic::AtomicUsize, Arc},
+    vec,
+};
 
 use bytes::Bytes;
 use echo::Echo;
@@ -18,10 +21,11 @@ use ping::Ping;
 pub use psync::PSync;
 pub use replconf::Replconf;
 use set::Set;
+use tokio::sync::RwLock;
 use unknown::Unknown;
 use wait::Wait;
 
-use crate::{connection::Connection, resp::RESP, Db};
+use crate::{config::ServerConfig, connection::Connection, resp::RESP, Db};
 
 /// Enum of supported Protocol Commands
 #[derive(Debug)]
@@ -74,7 +78,8 @@ impl Command {
         dst: &mut Connection,
         db: &Db,
         offset: Option<&AtomicUsize>,
-        replicas: &AtomicUsize,
+        replicas: Arc<RwLock<Vec<Connection>>>,
+        config: ServerConfig,
     ) -> crate::Result<()> {
         use Command::*;
 
@@ -87,8 +92,7 @@ impl Command {
             Info(command) => command.apply(&db, dst).await,
             Replconf(command) => command.apply(dst, offset).await,
             PSync(command) => command.apply(&db, dst).await,
-            Wait(command) => command.apply(dst, replicas).await,
-            // _ => unimplemented!(),
+            Wait(command) => command.apply(dst, offset, replicas, config).await,
         };
 
         if let Ok(Some(resp)) = resp {
@@ -109,7 +113,7 @@ impl Command {
             Command::Set(_) => "set".to_string(),
             Command::Get(_) => "get".to_string(),
             Command::Info(_) => "info".to_string(),
-            Command::Replconf(_) => "resplconf".to_string(),
+            Command::Replconf(_) => "replconf".to_string(),
             Command::PSync(_) => "psync".to_string(),
             Command::Wait(_) => "wait".to_string(),
             Command::Unknown(_) => "unknown".into(),
@@ -119,6 +123,15 @@ impl Command {
     pub fn is_replicable_command(&self) -> bool {
         match self {
             Command::Set(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn affects_offset(&self) -> bool {
+        match self {
+            Command::Set(_) => true,
+            // Command::Replconf(_) => true,
+            // Command::Ping(_) => true,
             _ => false,
         }
     }
