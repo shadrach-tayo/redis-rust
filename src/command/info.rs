@@ -1,6 +1,6 @@
 use bytes::Bytes;
 
-use crate::{connection::Connection, resp::RESP, Db, RespReader, RespReaderError};
+use crate::{config::ServerConfig, resp::RESP, Db, RespReader, RespReaderError};
 
 #[derive(Debug, Default)]
 pub struct Info {
@@ -14,9 +14,9 @@ impl Info {
     }
 
     /// Apply the echo command and write to the Tcp connection stream
-    pub async fn apply(self, db: &Db, _dst: &mut Connection) -> crate::Result<Option<RESP>> {
+    pub async fn apply(self, db: &Db, config: ServerConfig) -> crate::Result<Option<RESP>> {
         // dbg!(&resp);
-        let role = db.get_role();
+        let role = config.role.to_string();
         let mut data: String = "role:".to_owned();
         data.push_str(role.as_str());
         data.push_str("\r\n");

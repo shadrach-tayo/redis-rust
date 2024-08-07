@@ -94,7 +94,7 @@ impl Command {
             Unknown(command) => command.apply(dst).await,
             Set(command) => command.apply(&db, dst).await,
             Get(command) => command.apply(&db, dst).await,
-            Info(command) => command.apply(&db, dst).await,
+            Info(command) => command.apply(&db, config).await,
             Replconf(command) => command.apply(dst, offset).await,
             PSync(command) => command.apply(&db, dst).await,
             Wait(command) => command.apply(dst, offset, replicas, config).await,

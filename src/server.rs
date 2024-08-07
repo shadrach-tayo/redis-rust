@@ -135,7 +135,7 @@ impl Listener {
     //     // self.network_config = Some(config);
     // }
     pub fn init_repl_state(&mut self) {
-        self.db.db().set_role(Role::Master);
+        // self.db.db().set_role(Role::Master);
         self.db
             .db()
             .set_repl_id("8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".into());
@@ -172,8 +172,8 @@ impl Listener {
 
         let _empty_rdb_resp = connection.read_resp().await?;
 
-        self.db.db().set_role(crate::Role::Slave);
-        self.db.db().set_master(master);
+        // self.db.db().set_role(crate::Role::Slave);
+        // self.db.db().set_master(master);
 
         Ok(Some(connection))
     }
@@ -386,3 +386,9 @@ impl Handler {
         Ok(())
     }
 }
+
+// TODO:
+// - generate a test rdb file
+// - read rdb file from dir
+// - parse rdb file into key-val hashmap and expiry hashmap
+// - implement KEYS "*" command
