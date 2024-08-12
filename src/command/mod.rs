@@ -7,6 +7,7 @@ pub mod ping;
 pub mod psync;
 pub mod replconf;
 pub mod set;
+pub mod types;
 pub mod unknown;
 pub mod wait;
 
@@ -29,7 +30,7 @@ use tokio::sync::RwLock;
 use unknown::Unknown;
 use wait::Wait;
 
-use crate::{config::ServerConfig, connection::Connection, resp::RESP, Db};
+use crate::{config::ServerConfig, connection::Connection, rdb::Type, resp::RESP, Db};
 
 /// Enum of supported Protocol Commands
 #[derive(Debug)]
@@ -45,6 +46,7 @@ pub enum Command {
     Unknown(Unknown),
     Wait(Wait),
     Keys(Keys),
+    Type(types::Type),
 }
 
 impl Command {
@@ -68,6 +70,7 @@ impl Command {
             "psync" => Command::PSync(PSync::from_parts(&mut resp_reader)?),
             "wait" => Command::Wait(Wait::from_parts(&mut resp_reader)?),
             "keys" => Command::Keys(Keys::from_parts(&mut resp_reader)?),
+            "type" => Command::Type(types::Type::from_parts(&mut resp_reader)?),
             _ => panic!("Unexpected command"),
         };
 
@@ -92,17 +95,18 @@ impl Command {
         use Command::*;
 
         let resp = match self {
-            Config(command) => command.apply(config).await,
-            Echo(command) => command.apply(dst).await,
-            Ping(command) => command.apply(dst).await,
-            Unknown(command) => command.apply(dst).await,
-            Set(command) => command.apply(&db, dst).await,
-            Get(command) => command.apply(&db, dst).await,
-            Keys(command) => command.apply(&db, dst).await,
-            Info(command) => command.apply(&db, config).await,
-            Replconf(command) => command.apply(dst, offset).await,
-            PSync(command) => command.apply(&db, dst).await,
-            Wait(command) => command.apply(dst, offset, replicas, config).await,
+            Config(cmd) => cmd.apply(config).await,
+            Echo(cmd) => cmd.apply(dst).await,
+            Ping(cmd) => cmd.apply(dst).await,
+            Unknown(cmd) => cmd.apply(dst).await,
+            Set(cmd) => cmd.apply(&db, dst).await,
+            Get(cmd) => cmd.apply(&db, dst).await,
+            Keys(cmd) => cmd.apply(&db, dst).await,
+            Type(cmd) => cmd.apply(&db, dst).await,
+            Info(cmd) => cmd.apply(&db, config).await,
+            Replconf(cmd) => cmd.apply(dst, offset).await,
+            PSync(cmd) => cmd.apply(&db, dst).await,
+            Wait(cmd) => cmd.apply(dst, offset, replicas, config).await,
         };
 
         if let Ok(Some(resp)) = resp {
@@ -128,6 +132,7 @@ impl Command {
             Command::PSync(_) => "psync".to_string(),
             Command::Wait(_) => "wait".to_string(),
             Command::Keys(_) => "keys".to_string(),
+            Command::Type(_) => "type".to_string(),
             Command::Unknown(_) => "unknown".into(),
         }
     }

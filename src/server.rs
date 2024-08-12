@@ -416,9 +416,3 @@ impl Handler {
         Ok(())
     }
 }
-
-// TODO:
-// - generate a test rdb file ✅
-// - read rdb file from dir ✅
-// - parse rdb file into key-val hashmap and expiry hashmap
-// - implement KEYS "*" command

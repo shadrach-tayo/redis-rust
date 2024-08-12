@@ -64,7 +64,6 @@ pub struct RdbParser<F: Filter, B: Builder> {
 }
 
 pub fn read_db_file<P: AsRef<Path>>(path: P) -> Result<Vec<u8>> {
-    println!("Read rdb file: {:?}", path.as_ref());
     let file = std::fs::read(path)?;
     Ok(file)
 }

@@ -1,0 +1,50 @@
+use bytes::Bytes;
+
+use crate::{connection::Connection, resp::RESP, Db, RespReader, RespReaderError};
+
+#[derive(Debug, Default)]
+pub struct Type {
+    /// cache lookup key
+    key: String,
+}
+
+impl Type {
+    /// contruct new Type command
+    pub fn new(key: String) -> Self {
+        Type { key }
+    }
+
+    /// Construct new Type command by consuming the RespReader
+    ///
+    /// # default
+    ///
+    /// Return `Type::default` if RespReader has no stream left
+    /// otherwise return the error
+    pub fn from_parts(reader: &mut RespReader) -> Result<Self, RespReaderError> {
+        let key = reader.next_string()?;
+
+        Ok(Type { key })
+    }
+
+    /// Apply the echo command and write to the Tcp connection stream
+    pub async fn apply(self, db: &Db, _dst: &mut Connection) -> crate::Result<Option<RESP>> {
+        // set the value in the shared cache.
+        let value = db.get(&self.key);
+
+        match value {
+            Some(_) => Ok(Some(RESP::Simple("string".to_string()))),
+            None => Ok(Some(RESP::Simple("none".to_string()))),
+        }
+    }
+}
+
+/// Convert Type command back into an equivalent `RESP`
+impl From<Type> for RESP {
+    fn from(value: Type) -> Self {
+        let mut resp = RESP::array();
+        resp.push_bulk(Bytes::from("type"));
+        resp.push_bulk(Bytes::from(value.key.into_bytes()));
+
+        resp
+    }
+}
