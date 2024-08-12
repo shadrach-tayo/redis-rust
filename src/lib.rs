@@ -2,10 +2,10 @@ pub mod command;
 pub mod config;
 pub mod connection;
 pub mod db;
+pub mod rdb;
 pub mod replication;
 pub mod resp;
 pub mod server;
-
 pub use config::{parse_config, CliConfig};
 
 pub use resp::RESPError;

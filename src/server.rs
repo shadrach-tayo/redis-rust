@@ -15,6 +15,7 @@
 // use std::net::TcpListener;
 
 use std::{
+    path::Path,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc,
@@ -29,8 +30,12 @@ use tokio::{
 };
 
 use crate::{
-    config::ServerConfig, connection::Connection, ping::Ping, resp::RESP, CliConfig, Command, Db,
-    DbGuard, PSync, Replconf, ReplicaInfo, Role,
+    config::ServerConfig,
+    connection::Connection,
+    ping::Ping,
+    rdb::{self, DefaultFilter, RdbBuilder, RdbParser},
+    resp::RESP,
+    CliConfig, Command, Db, DbGuard, PSync, Replconf, ReplicaInfo, Role,
 };
 
 #[derive(Debug)]
@@ -98,7 +103,35 @@ pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> 
         master_repl_offset: Arc::new(AtomicU64::new(0)),
     };
 
-    let db = DbGuard::new();
+    let rdb = if config.dir.is_some() && config.dbfilename.is_some() {
+        let path =
+            Path::new(config.dir.unwrap().as_str()).join(config.dbfilename.unwrap().as_str());
+        match rdb::read_db_file(path) {
+            Ok(rdb) => Some(rdb),
+            Err(err) => {
+                println!("Error reading rdb file {:?}", err);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    println!("RDB: {:?}", rdb);
+    // println!("Empty RDB: {:?}", empty_rdb_file());
+    let derived_database = if let Some(rdb) = rdb {
+        let mut parser = RdbParser::new(DefaultFilter::new(), RdbBuilder::default(), rdb);
+        parser.parse()?
+    } else {
+        None
+    };
+
+    println!("DerivedDatabase {:?}", &derived_database);
+    let db = match derived_database {
+        Some(database) => DbGuard::from_derived(database),
+        None => DbGuard::new(),
+    };
+
     let mut server = Listener::new(listener, db, server_config);
 
     if let Some(master) = config.master {
@@ -171,9 +204,6 @@ impl Listener {
         let _psync_resp = connection.read_resp().await?;
 
         let _empty_rdb_resp = connection.read_resp().await?;
-
-        // self.db.db().set_role(crate::Role::Slave);
-        // self.db.db().set_master(master);
 
         Ok(Some(connection))
     }
@@ -388,7 +418,7 @@ impl Handler {
 }
 
 // TODO:
-// - generate a test rdb file
-// - read rdb file from dir
+// - generate a test rdb file ✅
+// - read rdb file from dir ✅
 // - parse rdb file into key-val hashmap and expiry hashmap
 // - implement KEYS "*" command

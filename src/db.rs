@@ -5,6 +5,8 @@ use std::{
 };
 use tokio::time::{Duration, Instant};
 
+use crate::rdb::DerivedDatabase;
+
 /// Instantiates a single db and exposes multiple references
 /// of it to the server
 #[derive(Debug)]
@@ -43,20 +45,26 @@ pub struct State {
     repl_offset: u64,
 }
 
-#[derive(Debug)]
-struct Entry {
+#[derive(Debug, Clone)]
+pub struct Entry {
     // data to store in bytes
-    data: Bytes,
+    pub data: Bytes,
 
     // optional expiration duration of the data stored
     #[allow(unused)]
-    expires_at: Option<Instant>,
+    pub expires_at: Option<Instant>,
 }
 
 impl DbGuard {
     /// create a new DbGuard instance
     pub fn new() -> DbGuard {
         DbGuard { db: Db::new() }
+    }
+
+    /// create a new DbGuard instance from derived rdb database
+    pub fn from_derived(database: DerivedDatabase) -> DbGuard {
+        let db = Db::from_derived(database);
+        DbGuard { db }
     }
 
     pub fn db(&self) -> Db {
@@ -68,6 +76,16 @@ impl Db {
     /// Create a new Instance of the Db
     pub fn new() -> Db {
         let shared = Arc::new(SharedDb::new());
+
+        // start background tasks
+        tokio::spawn(purge_expired_keys(shared.clone()));
+
+        Db { inner: shared }
+    }
+
+    /// Create a new Instance of the Db using derived rdb database data
+    pub fn from_derived(database: DerivedDatabase) -> Db {
+        let shared = Arc::new(SharedDb::from_derived(database));
 
         // start background tasks
         tokio::spawn(purge_expired_keys(shared.clone()));
@@ -93,6 +111,24 @@ impl Db {
         drop(state);
 
         Some(bytes)
+    }
+
+    /// Get the all Keys
+    ///
+    /// Returns `None` if there's no value associated with the key
+    pub fn keys(&self) -> Vec<String> {
+        let state = self.inner.state.lock().unwrap();
+
+        let keys = state
+            .entries
+            .keys()
+            .map(|key| key.to_owned())
+            .collect::<Vec<String>>();
+
+        // don't forget to release lock on state mutex
+        drop(state);
+
+        keys
     }
 
     /// Set a value associated to a key with an optional expiration
@@ -160,11 +196,19 @@ impl SharedDb {
             state: Mutex::new(State {
                 entries: HashMap::new(),
                 expirations: BTreeSet::new(),
-                // role: Role::Master,
-                // replicas: HashMap::new(),
                 replid: None,
                 repl_offset: 0,
-                // master: None,
+            }),
+        }
+    }
+
+    pub fn from_derived(datbase: DerivedDatabase) -> SharedDb {
+        SharedDb {
+            state: Mutex::new(State {
+                entries: datbase.entries,
+                expirations: datbase.expirations,
+                replid: None,
+                repl_offset: 0,
             }),
         }
     }

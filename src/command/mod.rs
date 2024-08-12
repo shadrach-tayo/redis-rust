@@ -2,6 +2,7 @@ pub mod config;
 pub mod echo;
 pub mod get;
 pub mod info;
+pub mod keys;
 pub mod ping;
 pub mod psync;
 pub mod replconf;
@@ -19,6 +20,7 @@ use config::Config;
 use echo::Echo;
 use get::Get;
 use info::Info;
+use keys::Keys;
 use ping::Ping;
 pub use psync::PSync;
 pub use replconf::Replconf;
@@ -42,6 +44,7 @@ pub enum Command {
     Set(Set),
     Unknown(Unknown),
     Wait(Wait),
+    Keys(Keys),
 }
 
 impl Command {
@@ -64,6 +67,7 @@ impl Command {
             "replconf" => Command::Replconf(Replconf::from_parts(&mut resp_reader)?),
             "psync" => Command::PSync(PSync::from_parts(&mut resp_reader)?),
             "wait" => Command::Wait(Wait::from_parts(&mut resp_reader)?),
+            "keys" => Command::Keys(Keys::from_parts(&mut resp_reader)?),
             _ => panic!("Unexpected command"),
         };
 
@@ -94,6 +98,7 @@ impl Command {
             Unknown(command) => command.apply(dst).await,
             Set(command) => command.apply(&db, dst).await,
             Get(command) => command.apply(&db, dst).await,
+            Keys(command) => command.apply(&db, dst).await,
             Info(command) => command.apply(&db, config).await,
             Replconf(command) => command.apply(dst, offset).await,
             PSync(command) => command.apply(&db, dst).await,
@@ -122,6 +127,7 @@ impl Command {
             Command::Replconf(_) => "replconf".to_string(),
             Command::PSync(_) => "psync".to_string(),
             Command::Wait(_) => "wait".to_string(),
+            Command::Keys(_) => "keys".to_string(),
             Command::Unknown(_) => "unknown".into(),
         }
     }
