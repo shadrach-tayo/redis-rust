@@ -94,8 +94,6 @@ impl XAdd {
             since_the_epoch.as_secs() * 1000 + since_the_epoch.subsec_nanos() as u64 / 1_000_000
         };
 
-        println!("Now: {now}");
-
         let millisec = ids
             .get(0)
             .map(|t| if t == "*" { now } else { t.parse().unwrap() })
@@ -142,7 +140,6 @@ impl XAdd {
                 .clone()
                 .unwrap_or("".to_string())
                 .split('-')
-                // .map(|char| char.parse().unwrap())
                 .map(|char| char.to_string())
                 .collect::<Vec<String>>();
 
@@ -199,14 +196,11 @@ impl XAdd {
 
         streams.push(new_stream);
 
-        println!("Stream: {}", self.key);
-        println!("Data: {:?}", &streams);
-
         let value = ValueType::Stream(streams);
 
         db.set(self.key, value, None);
 
-        Ok(Some(RESP::Simple(next_stream_id)))
+        Ok(Some(RESP::Bulk(Bytes::from(next_stream_id))))
     }
 }
 
