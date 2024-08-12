@@ -1,6 +1,6 @@
 use bytes::Bytes;
 
-use crate::{connection::Connection, resp::RESP, Db, RespReader, RespReaderError};
+use crate::{connection::Connection, resp::RESP, Db, RespReader, RespReaderError, ValueType};
 
 #[derive(Debug, Default)]
 pub struct Get {
@@ -31,8 +31,14 @@ impl Get {
         // set the value in the shared cache.
         let value = db.get(&self.key);
 
-        let response = if let Some(bytes) = value {
-            RESP::Bulk(bytes)
+        let response = if let Some(value) = value {
+            match value {
+                ValueType::Stream(stream) => {
+                    println!("Get stream: {:?}", stream);
+                    RESP::Null
+                }
+                ValueType::String(bytes) => RESP::Bulk(bytes),
+            }
         } else {
             RESP::Null
         };

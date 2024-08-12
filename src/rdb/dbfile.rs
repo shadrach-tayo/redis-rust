@@ -7,7 +7,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::Entry;
+use crate::Value;
 use bytes::Bytes;
 use tokio::time::Instant;
 
@@ -20,13 +20,13 @@ use tokio::time::Instant;
 
 #[derive(Debug, Default, Clone)]
 pub struct Database {
-    pub hash: RefCell<HashMap<String, Entry>>,
+    pub hash: RefCell<HashMap<String, Value>>,
     pub expirations: RefCell<BTreeSet<(Instant, String)>>,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct DerivedDatabase {
-    pub entries: HashMap<String, Entry>,
+    pub entries: HashMap<String, Value>,
     pub expirations: BTreeSet<(Instant, String)>,
 }
 
@@ -62,14 +62,15 @@ impl Database {
         };
 
         println!(
-            "Set Entry: {key}, {:?}, {:?}",
+            "Set Value: {key}, {:?}, {:?}",
             String::from_utf8(value.clone()),
             expire_at
         );
         self.hash.borrow_mut().insert(
             key.clone(),
-            Entry {
-                data: Bytes::from(value),
+            Value {
+                data: crate::ValueType::String(Bytes::from(value)),
+                _created_at: Instant::now(),
                 expires_at: expire_at,
             },
         );

@@ -1,11 +1,10 @@
-use bytes::Bytes;
 use std::{
     collections::{BTreeSet, HashMap},
     sync::{Arc, Mutex},
 };
 use tokio::time::{Duration, Instant};
 
-use crate::rdb::DerivedDatabase;
+use crate::{rdb::DerivedDatabase, Value, ValueType};
 
 /// Instantiates a single db and exposes multiple references
 /// of it to the server
@@ -34,7 +33,7 @@ pub struct SharedDb {
 #[derive(Debug)]
 pub struct State {
     // key value map for storing cached entries
-    entries: HashMap<String, Entry>,
+    entries: HashMap<String, Value>,
 
     // Unique entries of expiration time sorted by time
     #[allow(unused)]
@@ -43,16 +42,6 @@ pub struct State {
     // Replication state identifiers
     replid: Option<String>,
     repl_offset: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct Entry {
-    // data to store in bytes
-    pub data: Bytes,
-
-    // optional expiration duration of the data stored
-    #[allow(unused)]
-    pub expires_at: Option<Instant>,
 }
 
 impl DbGuard {
@@ -96,7 +85,7 @@ impl Db {
     /// Get the byte associated with a key
     ///
     /// Returns `None` if there's no value associated with the key
-    pub fn get(&self, key: &str) -> Option<Bytes> {
+    pub fn get(&self, key: &str) -> Option<ValueType> {
         let state = self.inner.state.lock().unwrap();
 
         let entry = state.entries.get(key);
@@ -134,40 +123,18 @@ impl Db {
     /// Set a value associated to a key with an optional expiration
     ///
     /// If the key already exists, remove it
-    pub fn set(&self, key: String, value: Bytes, expires_at: Option<Duration>) {
+    pub fn set(&self, key: String, value: crate::ValueType, expires_at: Option<Duration>) {
+        let value = Value::new(value, expires_at);
         let mut state = self.inner.state.lock().unwrap();
-
-        // Convert expires at to timestamp using the .map method
-        // add current timestamp to duration to get when the
-        // key will expire, defaults to None
-        let expiry = expires_at.map(|duration| {
-            let now = tokio::time::Instant::now();
-            now + duration
-        });
-
-        // Insert key value entry into store
-        state.entries.insert(
-            key.clone(),
-            Entry {
-                data: value,
-                expires_at: expiry,
-            },
-        );
-
-        // if the key exist, remove the entry
-        // if let Some(prev) = prev {
-        //     state.entries.remove(&key);
-
-        //     if let Some(expires_at) = prev.expires_at {
-        //         state.expirations.remove(&(expires_at, key.clone()));
-        //     }
-        // };
 
         // insert expires_at into expiration tracker
         // when key expires it'll automatically be removed later
-        if let Some(expiry) = expiry {
+        if let Some(expiry) = value.expires_at {
             state.expirations.insert((expiry, key.clone()));
         }
+
+        // Insert key value entry into store
+        state.entries.insert(key.clone(), value);
 
         drop(state);
     }

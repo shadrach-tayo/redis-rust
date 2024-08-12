@@ -1,6 +1,6 @@
 use bytes::Bytes;
 
-use crate::{connection::Connection, resp::RESP, Db, RespReader, RespReaderError};
+use crate::{connection::Connection, resp::RESP, Db, RespReader, RespReaderError, ValueType};
 
 #[derive(Debug, Default)]
 pub struct Type {
@@ -31,9 +31,14 @@ impl Type {
         // set the value in the shared cache.
         let value = db.get(&self.key);
 
-        match value {
-            Some(_) => Ok(Some(RESP::Simple("string".to_string()))),
-            None => Ok(Some(RESP::Simple("none".to_string()))),
+        if let Some(value_type) = value {
+            println!("Value type: {:?}", value_type);
+            match value_type {
+                ValueType::String(_) => Ok(Some(RESP::Simple("string".to_string()))),
+                ValueType::Stream(_) => Ok(Some(RESP::Simple("stream".to_string()))),
+            }
+        } else {
+            Ok(Some(RESP::Simple("none".to_string())))
         }
     }
 }

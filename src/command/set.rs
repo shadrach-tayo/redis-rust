@@ -2,7 +2,7 @@ use tokio::time::Duration;
 
 use bytes::Bytes;
 
-use crate::{connection::Connection, resp::RESP, Db, RespReader, RespReaderError};
+use crate::{connection::Connection, resp::RESP, Db, RespReader, RespReaderError, ValueType};
 
 #[derive(Debug, Default)]
 pub struct Set {
@@ -61,7 +61,8 @@ impl Set {
     /// Apply the echo command and write to the Tcp connection stream
     pub async fn apply(self, db: &Db, _dst: &mut Connection) -> crate::Result<Option<RESP>> {
         // set the value in the shared cache.
-        db.set(self.key, self.value, self.expire);
+        let value = ValueType::String(self.value);
+        db.set(self.key, value, self.expire);
 
         Ok(Some(RESP::Simple("OK".into())))
     }
