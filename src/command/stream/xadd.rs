@@ -29,11 +29,6 @@ impl XAdd {
         let key = reader.next_string()?;
         let stream_id = reader.next_string()?;
 
-        let stream_id_split = stream_id
-            .split('-')
-            .map(|char| char.parse().unwrap())
-            .collect::<Vec<u64>>();
-
         let mut pairs = HashMap::new();
 
         loop {
@@ -48,19 +43,81 @@ impl XAdd {
         Ok(XAdd {
             key,
             fields: pairs,
-            id: Some((stream_id_split[0], stream_id_split[1])),
+            id: None, // Some((stream_id_split[0], stream_id_split[1])),
             stream_id: Some(stream_id),
         })
     }
 
-    /// Apply the echo command and write to the Tcp connection stream
+    fn is_stream_id_valid(&self) -> bool {
+        let ids = self
+            .stream_id
+            .clone()
+            .unwrap_or("".to_string())
+            .split('-')
+            .map(|char| char.parse().unwrap())
+            .collect::<Vec<u64>>();
+
+        if ids.len() > 2 {
+            return false;
+        }
+
+        if ids[1] < 1 {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// Apply the stream command and write to the Tcp connection stream
     pub async fn apply(self, db: &Db) -> crate::Result<Option<RESP>> {
-        let stream = StreamData {
-            id: self.id.unwrap(),
+        if !self.is_stream_id_valid() {
+            return Ok(Some(RESP::Error(
+                "ERR The ID specified in XADD must be greater than 0-0".to_string(),
+            )));
+        }
+
+        let id = self
+            .stream_id
+            .clone()
+            .unwrap()
+            .split('-')
+            .map(|char| char.parse().unwrap())
+            .collect::<Vec<u64>>();
+
+        let new_stream = StreamData {
+            id: (id[0], id[1]),
             pairs: self.fields,
         };
 
-        let value = ValueType::Stream(vec![stream]);
+        let prev_stream = db.get(&self.key);
+
+        let mut streams = if let Some(prev_stream) = prev_stream {
+            match prev_stream {
+                ValueType::Stream(stream) => stream,
+                _ => vec![],
+            }
+        } else {
+            vec![]
+        };
+
+        // The ID should be greater than the ID of the last entry in the stream.
+        // The millisecondsTime part of the ID should be greater than or equal to the millisecondsTime of the last entry.
+        // If the millisecondsTime part of the ID is equal to the millisecondsTime of the last entry, the sequenceNumber part of the ID should be greater than the sequenceNumber of the last entry.
+        // If the stream is empty, the ID should be greater than 0-0
+        for stream in streams.iter() {
+            if stream.id >= new_stream.id {
+                return Ok(Some(RESP::Error(
+                        "ERR The ID specified in XADD is equal or smaller than the target stream top item".to_string(),
+                    )));
+            }
+        }
+
+        streams.push(new_stream);
+
+        println!("Stream: {}", self.key);
+        println!("Data: {:?}", &streams);
+
+        let value = ValueType::Stream(streams);
 
         db.set(self.key, value, None);
 
