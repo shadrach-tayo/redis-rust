@@ -46,6 +46,13 @@ impl RESP {
         }
     }
 
+    pub fn push(&mut self, list: RESP) {
+        match self {
+            RESP::Array(vec) => vec.push(list),
+            _ => panic!("Not `RESP::Array`"),
+        }
+    }
+
     /// Push an `integer` resp into an array.
     ///
     /// # Panics

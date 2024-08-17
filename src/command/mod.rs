@@ -27,7 +27,7 @@ use ping::Ping;
 pub use psync::PSync;
 pub use replconf::Replconf;
 use set::Set;
-use stream::XAdd;
+use stream::{XAdd, XRange};
 use tokio::sync::RwLock;
 use unknown::Unknown;
 use wait::Wait;
@@ -49,7 +49,8 @@ pub enum Command {
     Wait(Wait),
     Keys(Keys),
     Type(types::Type),
-    XADD(XAdd),
+    XAdd(XAdd),
+    XRange(XRange),
 }
 
 impl Command {
@@ -74,7 +75,8 @@ impl Command {
             "wait" => Command::Wait(Wait::from_parts(&mut resp_reader)?),
             "keys" => Command::Keys(Keys::from_parts(&mut resp_reader)?),
             "type" => Command::Type(types::Type::from_parts(&mut resp_reader)?),
-            "xadd" => Command::XADD(XAdd::from_parts(&mut resp_reader)?),
+            "xadd" => Command::XAdd(XAdd::from_parts(&mut resp_reader)?),
+            "xrange" => Command::XRange(XRange::from_parts(&mut resp_reader)?),
             _ => panic!("Unexpected command"),
         };
 
@@ -111,7 +113,8 @@ impl Command {
             Replconf(cmd) => cmd.apply(dst, offset).await,
             PSync(cmd) => cmd.apply(&db, dst).await,
             Wait(cmd) => cmd.apply(dst, offset, replicas, config).await,
-            XADD(cmd) => cmd.apply(&db).await,
+            XAdd(cmd) => cmd.apply(&db).await,
+            XRange(cmd) => cmd.apply(&db).await,
         };
 
         if let Ok(Some(resp)) = resp {
@@ -138,7 +141,8 @@ impl Command {
             Command::Wait(_) => "wait".to_string(),
             Command::Keys(_) => "keys".to_string(),
             Command::Type(_) => "type".to_string(),
-            Command::XADD(_) => "xadd".to_string(),
+            Command::XAdd(_) => "xadd".to_string(),
+            Command::XRange(_) => "xrange".to_string(),
             Command::Unknown(_) => "unknown".into(),
         }
     }

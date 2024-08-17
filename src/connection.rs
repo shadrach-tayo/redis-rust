@@ -6,6 +6,7 @@ use std::{
 
 #[allow(unused_imports)]
 use bytes::{Buf, BytesMut};
+use futures::{future::BoxFuture, FutureExt};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -118,24 +119,27 @@ impl Connection {
     }
 
     /// Write a single `RESP` value to the underlying connection stream
-    pub async fn write_frame(&mut self, resp: &RESP) -> io::Result<()> {
-        // println!("Write resp {:?}", &resp);
-        match resp {
-            RESP::Array(list) => {
-                // Encode the RESP data type prefix for an array `*`
-                self.stream.write_all(b"*").await?;
-                self.write_decimal(list.len() as u64).await?;
+    pub fn write_frame<'a>(&'a mut self, resp: &'a RESP) -> BoxFuture<'a, io::Result<()>> {
+        async move {
+            // println!("Write resp {:?}", &resp);
+            match resp {
+                RESP::Array(list) => {
+                    // Encode the RESP data type prefix for an array `*`
+                    self.stream.write_all(b"*").await?;
+                    self.write_decimal(list.len() as u64).await?;
 
-                for resp in list {
-                    self.write_value(resp).await?;
+                    for resp in list {
+                        self.write_value(resp).await?;
+                    }
                 }
+                // resp is a literal type not a list/aggregate
+                _ => self.write_value(resp).await?,
             }
-            // resp is a literal type not a list/aggregate
-            _ => self.write_value(resp).await?,
-        }
 
-        // println!("Outgoing Buffer: {:?}", resp);
-        self.stream.flush().await
+            // println!("Outgoing Buffer: {:?}", resp);
+            self.stream.flush().await
+        }
+        .boxed()
     }
 
     /// Write a single `RESP` value to the underlying connection stream
@@ -172,7 +176,15 @@ impl Connection {
                 println!("Write File: {}", len);
                 self.stream.write_all(data).await?;
             }
-            RESP::Array(_) => unimplemented!(),
+            RESP::Array(frames) => {
+                // Encode the RESP data type prefix for an array `*`
+                self.stream.write_all(b"*").await?;
+                self.write_decimal(frames.len() as u64).await?;
+
+                for frame in frames {
+                    self.write_frame(&frame).await?;
+                }
+            }
         }
 
         Ok(())
