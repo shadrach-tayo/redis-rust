@@ -8,6 +8,7 @@ pub struct XRange {
     pub key: String,
     pub start: (u64, u64),
     pub end: (u64, u64),
+    pub mode: Option<String>,
 }
 
 fn get_range_value(string: String) -> (u64, u64) {
@@ -38,13 +39,39 @@ impl XRange {
     ///
     pub fn from_parts(reader: &mut RespReader) -> Result<Self, RespReaderError> {
         let key = reader.next_string()?;
-        let start = get_range_value(reader.next_string()?);
-        let end = get_range_value(reader.next_string()?);
 
-        assert!(start <= end, "XRANGE start is not <= end value");
+        let (start, end, mode) = match reader.next_string() {
+            Ok(range_or_mode) if range_or_mode == "-" => {
+                let end = get_range_value(reader.next_string()?);
+                ((0, 0), end, Some(range_or_mode))
+            }
+            Ok(start) => {
+                let start = get_range_value(start);
+                let value = reader.next_string()?;
+                let mut end: (u64, u64) = (0, 0);
+                let mut mode = None;
+                if value == "+" {
+                    mode = Some(value);
+                } else {
+                    end = get_range_value(value);
+                }
+                (start, end, mode)
+            }
+            Err(err) => return Err(err.into()),
+        };
+
+        // let start = get_range_value(reader.next_string()?);
+        // let end = get_range_value(reader.next_string()?);
+
+        // assert!(start <= end, "XRANGE start is not <= end value");
 
         println!("xrange: {key}: {:?}-{:?}", start, end);
-        Ok(XRange { key, start, end })
+        Ok(XRange {
+            key,
+            start,
+            end,
+            mode,
+        })
     }
 
     /// Apply the stream command and write to the Tcp connection stream
@@ -62,24 +89,66 @@ impl XRange {
 
         let mut resp = RESP::array();
 
-        let xrange: Vec<RESP> = streams
-            .iter()
-            .filter_map(|entry| {
-                if entry.id >= self.start && entry.id <= self.end {
-                    let mut stream_resp = RESP::array();
-                    stream_resp.push_bulk(Bytes::from(format!("{}-{}", entry.id.0, entry.id.1)));
-                    let mut inner_resp = RESP::array();
-                    for (key, value) in entry.pairs.iter() {
-                        inner_resp.push_bulk(Bytes::from(key.to_owned()));
-                        inner_resp.push_bulk(Bytes::from(value.to_owned()));
+        let xrange: Vec<RESP> = match self.mode {
+            None => streams
+                .iter()
+                .filter_map(|entry| {
+                    if entry.id >= self.start && entry.id <= self.end {
+                        let mut stream_resp = RESP::array();
+                        stream_resp
+                            .push_bulk(Bytes::from(format!("{}-{}", entry.id.0, entry.id.1)));
+                        let mut inner_resp = RESP::array();
+                        for (key, value) in entry.pairs.iter() {
+                            inner_resp.push_bulk(Bytes::from(key.to_owned()));
+                            inner_resp.push_bulk(Bytes::from(value.to_owned()));
+                        }
+                        stream_resp.push(inner_resp);
+                        Some(stream_resp)
+                    } else {
+                        None
                     }
-                    stream_resp.push(inner_resp);
-                    Some(stream_resp)
-                } else {
-                    None
-                }
-            })
-            .collect();
+                })
+                .collect(),
+            Some(mode) if mode == "-" => streams
+                .iter()
+                .filter_map(|entry| {
+                    if entry.id <= self.end {
+                        let mut stream_resp = RESP::array();
+                        stream_resp
+                            .push_bulk(Bytes::from(format!("{}-{}", entry.id.0, entry.id.1)));
+                        let mut inner_resp = RESP::array();
+                        for (key, value) in entry.pairs.iter() {
+                            inner_resp.push_bulk(Bytes::from(key.to_owned()));
+                            inner_resp.push_bulk(Bytes::from(value.to_owned()));
+                        }
+                        stream_resp.push(inner_resp);
+                        Some(stream_resp)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            Some(mode) if mode == "+" => streams
+                .iter()
+                .filter_map(|entry| {
+                    if entry.id >= self.start {
+                        let mut stream_resp = RESP::array();
+                        stream_resp
+                            .push_bulk(Bytes::from(format!("{}-{}", entry.id.0, entry.id.1)));
+                        let mut inner_resp = RESP::array();
+                        for (key, value) in entry.pairs.iter() {
+                            inner_resp.push_bulk(Bytes::from(key.to_owned()));
+                            inner_resp.push_bulk(Bytes::from(value.to_owned()));
+                        }
+                        stream_resp.push(inner_resp);
+                        Some(stream_resp)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            Some(unsupported) => panic!("unsupported XRANGE query {unsupported}"),
+        };
 
         for data in xrange.iter() {
             resp.push(data.to_owned());
