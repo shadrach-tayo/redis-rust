@@ -60,11 +60,6 @@ impl XRange {
             Err(err) => return Err(err.into()),
         };
 
-        // let start = get_range_value(reader.next_string()?);
-        // let end = get_range_value(reader.next_string()?);
-
-        // assert!(start <= end, "XRANGE start is not <= end value");
-
         println!("xrange: {key}: {:?}-{:?}", start, end);
         Ok(XRange {
             key,
