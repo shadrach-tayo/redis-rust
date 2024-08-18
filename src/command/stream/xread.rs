@@ -1,10 +1,12 @@
+use std::time::Duration;
+
 use crate::{resp::RESP, Db, RespReader, RespReaderError, ValueType};
 use bytes::Bytes;
 
 #[derive(Debug, Default)]
 pub struct XRead {
     pub streams: Vec<StreamFilter>,
-    // pub stream_ids: Vec<(u64, u64)>,
+    pub block: u64, // pub stream_ids: Vec<(u64, u64)>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -40,23 +42,34 @@ impl XRead {
     /// Parse next_string()? to get the pair value
     ///
     pub fn from_parts(reader: &mut RespReader) -> Result<Self, RespReaderError> {
-        let option = reader.next_string()?;
+        // let option = reader.next_string()?;
 
-        assert!(option == "streams");
+        // assert!(option == "streams");
 
         let mut streams = vec![];
         let mut keys = vec![];
         let mut ids = vec![];
 
+        let mut block = 0;
+
         while let Ok(next) = reader.next_string() {
-            let parts = next
-                .split('-')
-                .map(|char| char.to_string())
-                .collect::<Vec<String>>();
-            if parts.len() == 2 {
-                ids.push(next);
-            } else {
-                keys.push(next);
+            match next.to_lowercase().as_str() {
+                "block" => {
+                    block = reader.next_int()?;
+                }
+                "streams" => continue,
+                "count" => unimplemented!("COUNT option not implement for XREAD ❌"),
+                next => {
+                    let parts = next
+                        .split('-')
+                        .map(|char| char.to_string())
+                        .collect::<Vec<String>>();
+                    if parts.len() == 2 {
+                        ids.push(next.to_owned());
+                    } else {
+                        keys.push(next.to_owned());
+                    }
+                }
             }
         }
 
@@ -71,13 +84,15 @@ impl XRead {
             })
         }
 
-        // println!("XRead: {:?}", streams);
-        Ok(XRead { streams })
+        println!("XRead: {:?}, Block: {block}", streams);
+        Ok(XRead { streams, block })
     }
 
     /// Apply the stream command and write to the Tcp connection stream
     pub async fn apply(self, db: &Db) -> crate::Result<Option<RESP>> {
-        let mut resp = RESP::array();
+        let mut resp = RESP::Null;
+
+        tokio::time::sleep(Duration::from_millis(self.block)).await;
 
         let xreads: Vec<RESP> = self
             .streams
@@ -122,6 +137,10 @@ impl XRead {
                         })
                         .collect();
 
+                    if results.len() == 0 {
+                        return None;
+                    }
+
                     let mut field_resp = RESP::array();
 
                     for result in results {
@@ -135,6 +154,12 @@ impl XRead {
                 }
             })
             .collect();
+
+        println!("Result len: {}", xreads.len());
+
+        if xreads.len() > 0 {
+            resp = RESP::array();
+        }
 
         for data in xreads.iter() {
             resp.push(data.to_owned());
