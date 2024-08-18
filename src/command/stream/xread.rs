@@ -6,7 +6,7 @@ use bytes::Bytes;
 #[derive(Debug, Default)]
 pub struct XRead {
     pub streams: Vec<StreamFilter>,
-    pub block: u64, // pub stream_ids: Vec<(u64, u64)>,
+    pub block: Option<u64>, // pub stream_ids: Vec<(u64, u64)>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -40,22 +40,17 @@ impl XRead {
     ///
     /// Parse next_string()? to get the pair key
     /// Parse next_string()? to get the pair value
-    ///
     pub fn from_parts(reader: &mut RespReader) -> Result<Self, RespReaderError> {
-        // let option = reader.next_string()?;
-
-        // assert!(option == "streams");
-
         let mut streams = vec![];
         let mut keys = vec![];
         let mut ids = vec![];
 
-        let mut block = 0;
+        let mut block = None;
 
         while let Ok(next) = reader.next_string() {
             match next.to_lowercase().as_str() {
                 "block" => {
-                    block = reader.next_int()?;
+                    block = Some(reader.next_int()?);
                 }
                 "streams" => continue,
                 "count" => unimplemented!("COUNT option not implement for XREAD ❌"),
@@ -84,18 +79,12 @@ impl XRead {
             })
         }
 
-        println!("XRead: {:?}, Block: {block}", streams);
+        println!("XRead: {:?}, Block: {:?}", streams, block);
         Ok(XRead { streams, block })
     }
 
-    /// Apply the stream command and write to the Tcp connection stream
-    pub async fn apply(self, db: &Db) -> crate::Result<Option<RESP>> {
-        let mut resp = RESP::Null;
-
-        tokio::time::sleep(Duration::from_millis(self.block)).await;
-
-        let xreads: Vec<RESP> = self
-            .streams
+    async fn run_command(&self, db: &Db) -> Vec<RESP> {
+        self.streams
             .iter()
             .filter_map(|stream| {
                 let streams = db.get(&stream.key);
@@ -153,13 +142,36 @@ impl XRead {
                     Some(stream_resp)
                 }
             })
-            .collect();
+            .collect()
+    }
 
-        println!("Result len: {}", xreads.len());
+    /// Apply the stream command and write to the Tcp connection stream
+    pub async fn apply(self, db: &Db) -> crate::Result<Option<RESP>> {
+        let mut resp = RESP::Null;
+
+        let xreads = match self.block {
+            Some(0) => {
+                let mut streams = self.run_command(db).await;
+                while streams.len() == 0 {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    streams = self.run_command(db).await;
+                }
+                streams
+            }
+            Some(timeout) => {
+                tokio::time::sleep(Duration::from_millis(timeout)).await;
+                self.run_command(db).await
+            }
+            None => self.run_command(db).await,
+        };
+
+        // let xreads = self.run_command(db).await;
 
         if xreads.len() > 0 {
             resp = RESP::array();
         }
+
+        println!("Result len: {}", xreads.len());
 
         for data in xreads.iter() {
             resp.push(data.to_owned());
@@ -174,6 +186,7 @@ impl From<XRead> for RESP {
     fn from(this: XRead) -> Self {
         let mut resp = RESP::array();
         resp.push_bulk(Bytes::from("XREAD"));
+
         resp.push_bulk(Bytes::from("streams"));
         for stream in this.streams.iter() {
             resp.push_bulk(Bytes::from(stream.key.to_owned()));
