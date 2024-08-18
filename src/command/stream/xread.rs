@@ -3,8 +3,14 @@ use bytes::Bytes;
 
 #[derive(Debug, Default)]
 pub struct XRead {
-    pub streams: Vec<String>,
-    pub stream_id: (u64, u64),
+    pub streams: Vec<StreamFilter>,
+    // pub stream_ids: Vec<(u64, u64)>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct StreamFilter {
+    key: String,
+    id: (u64, u64),
 }
 
 fn get_range_value(string: String) -> (u64, u64) {
@@ -21,7 +27,7 @@ fn get_range_value(string: String) -> (u64, u64) {
 }
 
 impl XRead {
-    pub fn new(streams: Vec<String>) -> Self {
+    pub fn new(streams: Vec<StreamFilter>) -> Self {
         XRead {
             streams,
             ..XRead::default()
@@ -39,12 +45,34 @@ impl XRead {
         assert!(option == "streams");
 
         let mut streams = vec![];
-        let stream = reader.next_string()?;
-        streams.push(stream.clone());
-        let stream_id = get_range_value(reader.next_string()?);
+        let mut keys = vec![];
+        let mut ids = vec![];
 
-        println!("XRead: {:?}-{:?}", stream, stream_id);
-        Ok(XRead { streams, stream_id })
+        while let Ok(next) = reader.next_string() {
+            let parts = next
+                .split('-')
+                .map(|char| char.to_string())
+                .collect::<Vec<String>>();
+            if parts.len() == 2 {
+                ids.push(next);
+            } else {
+                keys.push(next);
+            }
+        }
+
+        for (idx, key) in keys.iter().enumerate() {
+            let id = ids
+                .get(idx)
+                .map(|p| p.to_owned())
+                .unwrap_or("0-0".to_string());
+            streams.push(StreamFilter {
+                key: key.to_owned(),
+                id: get_range_value(id),
+            })
+        }
+
+        // println!("XRead: {:?}", streams);
+        Ok(XRead { streams })
     }
 
     /// Apply the stream command and write to the Tcp connection stream
@@ -54,8 +82,8 @@ impl XRead {
         let xreads: Vec<RESP> = self
             .streams
             .iter()
-            .filter_map(|stream_key| {
-                let streams = db.get(stream_key);
+            .filter_map(|stream| {
+                let streams = db.get(&stream.key);
                 let streams = if let Some(prev_stream) = streams {
                     match prev_stream {
                         ValueType::Stream(stream) => Some(stream),
@@ -75,7 +103,7 @@ impl XRead {
                     let results: Vec<RESP> = streams
                         .iter()
                         .filter_map(|entry| {
-                            if entry.id > self.stream_id {
+                            if entry.id > stream.id {
                                 let mut entry_resp = RESP::array();
                                 entry_resp.push_bulk(Bytes::from(format!(
                                     "{}-{}",
@@ -100,7 +128,7 @@ impl XRead {
                         field_resp.push(result);
                     }
 
-                    stream_resp.push_bulk(Bytes::from(stream_key.to_owned()));
+                    stream_resp.push_bulk(Bytes::from(stream.key.to_owned()));
                     stream_resp.push(field_resp);
 
                     Some(stream_resp)
@@ -123,12 +151,12 @@ impl From<XRead> for RESP {
         resp.push_bulk(Bytes::from("XREAD"));
         resp.push_bulk(Bytes::from("streams"));
         for stream in this.streams.iter() {
-            resp.push_bulk(Bytes::from(stream.to_owned()));
+            resp.push_bulk(Bytes::from(stream.key.to_owned()));
         }
-        resp.push_bulk(Bytes::from(format!(
-            "{}-{}",
-            this.stream_id.0, this.stream_id.1
-        )));
+        for stream in this.streams.iter() {
+            resp.push_bulk(Bytes::from(format!("{}-{}", stream.id.0, stream.id.1)));
+        }
+
         resp
     }
 }
