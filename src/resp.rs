@@ -8,6 +8,8 @@ use std::{
 
 use bytes::{Buf, Bytes};
 
+use crate::StreamData;
+
 pub const TERMINATOR: &str = "\r\n";
 
 #[allow(unused)]
@@ -269,3 +271,33 @@ impl fmt::Display for RESPError {
 }
 
 impl std::error::Error for RESPError {}
+
+impl From<StreamData> for RESP {
+    fn from(value: StreamData) -> Self {
+        let mut resp = RESP::array();
+        resp.push_bulk(Bytes::from(format!("{}-{}", value.id.0, value.id.1)));
+        let mut inner_resp = RESP::array();
+        for (key, value) in value.pairs.iter() {
+            inner_resp.push_bulk(Bytes::from(key.to_owned()));
+            inner_resp.push_bulk(Bytes::from(value.to_owned()));
+        }
+        resp.push(inner_resp);
+
+        resp
+    }
+}
+
+impl From<&StreamData> for RESP {
+    fn from(value: &StreamData) -> Self {
+        let mut resp = RESP::array();
+        resp.push_bulk(Bytes::from(format!("{}-{}", value.id.0, value.id.1)));
+        let mut inner_resp = RESP::array();
+        for (key, value) in value.pairs.iter() {
+            inner_resp.push_bulk(Bytes::from(key.to_owned()));
+            inner_resp.push_bulk(Bytes::from(value.to_owned()));
+        }
+        resp.push(inner_resp);
+
+        resp
+    }
+}

@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use crate::{resp::RESP, Db, RespReader, RespReaderError, ValueType};
 use bytes::Bytes;
+use tokio::time::Instant;
 
 #[derive(Debug, Default)]
 pub struct XRead {
@@ -13,6 +14,7 @@ pub struct XRead {
 pub struct StreamFilter {
     key: String,
     id: (u64, u64),
+    created_at_filter: Option<Instant>,
 }
 
 fn get_range_value(string: String) -> (u64, u64) {
@@ -54,6 +56,7 @@ impl XRead {
                 }
                 "streams" => continue,
                 "count" => unimplemented!("COUNT option not implement for XREAD ❌"),
+                "$" => ids.push("$".to_string()),
                 next => {
                     let parts = next
                         .split('-')
@@ -73,13 +76,22 @@ impl XRead {
                 .get(idx)
                 .map(|p| p.to_owned())
                 .unwrap_or("0-0".to_string());
-            streams.push(StreamFilter {
-                key: key.to_owned(),
-                id: get_range_value(id),
-            })
+
+            if id == "$" {
+                streams.push(StreamFilter {
+                    key: key.to_owned(),
+                    id: (0, 0),
+                    created_at_filter: Some(Instant::now()),
+                })
+            } else {
+                streams.push(StreamFilter {
+                    key: key.to_owned(),
+                    id: get_range_value(id),
+                    created_at_filter: None,
+                })
+            }
         }
 
-        println!("XRead: {:?}, Block: {:?}", streams, block);
         Ok(XRead { streams, block })
     }
 
@@ -107,19 +119,14 @@ impl XRead {
                     let results: Vec<RESP> = streams
                         .iter()
                         .filter_map(|entry| {
-                            if entry.id > stream.id {
-                                let mut entry_resp = RESP::array();
-                                entry_resp.push_bulk(Bytes::from(format!(
-                                    "{}-{}",
-                                    entry.id.0, entry.id.1
-                                )));
-                                let mut inner_resp = RESP::array();
-                                for (key, value) in entry.pairs.iter() {
-                                    inner_resp.push_bulk(Bytes::from(key.to_owned()));
-                                    inner_resp.push_bulk(Bytes::from(value.to_owned()));
+                            if stream.created_at_filter.is_some() {
+                                if stream.created_at_filter.unwrap() < entry._created_at {
+                                    Some(entry.into())
+                                } else {
+                                    None
                                 }
-                                entry_resp.push(inner_resp);
-                                Some(entry_resp)
+                            } else if entry.id > stream.id {
+                                Some(entry.into())
                             } else {
                                 None
                             }
@@ -164,8 +171,6 @@ impl XRead {
             }
             None => self.run_command(db).await,
         };
-
-        // let xreads = self.run_command(db).await;
 
         if xreads.len() > 0 {
             resp = RESP::array();

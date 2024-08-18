@@ -5,16 +5,9 @@ use tokio::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct Value {
-    // data to store in bytes
-    // pub data: Bytes,
-
-    // optional expiration duration of the data stored
-    #[allow(unused)]
     pub expires_at: Option<Instant>,
-
-    pub _created_at: Instant,
-
     pub data: ValueType,
+    pub _created_at: Instant,
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +20,7 @@ pub enum ValueType {
 pub struct StreamData {
     pub id: (u64, u64),
     pub pairs: HashMap<String, String>,
+    pub _created_at: Instant,
 }
 
 impl Value {

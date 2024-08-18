@@ -4,6 +4,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use tokio::time::Instant;
 
 use crate::{resp::RESP, Db, RespReader, RespReaderError, StreamData, ValueType};
 
@@ -179,6 +180,7 @@ impl XAdd {
         let new_stream = StreamData {
             id: stream_id,
             pairs: self.fields,
+            _created_at: Instant::now(),
         };
 
         // The ID should be greater than the ID of the last entry in the stream.
