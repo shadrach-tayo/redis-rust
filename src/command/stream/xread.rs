@@ -176,12 +176,9 @@ impl XRead {
             resp = RESP::array();
         }
 
-        println!("Result len: {}", xreads.len());
-
         for data in xreads.iter() {
             resp.push(data.to_owned());
         }
-        println!("XREAD: {:?}", &resp);
 
         Ok(Some(resp))
     }

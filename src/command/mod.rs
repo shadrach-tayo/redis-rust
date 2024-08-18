@@ -1,6 +1,7 @@
 pub mod config;
 pub mod echo;
 pub mod get;
+pub mod incr;
 pub mod info;
 pub mod keys;
 pub mod ping;
@@ -21,6 +22,7 @@ use bytes::Bytes;
 use config::Config;
 use echo::Echo;
 use get::Get;
+use incr::Incr;
 use info::Info;
 use keys::Keys;
 use ping::Ping;
@@ -52,6 +54,7 @@ pub enum Command {
     XAdd(XAdd),
     XRange(XRange),
     XRead(XRead),
+    Incr(Incr),
 }
 
 impl Command {
@@ -69,6 +72,7 @@ impl Command {
             "config" => Command::Config(Config::from_parts(&mut resp_reader)?),
             "ping" => Command::Ping(Ping::from_parts(&mut resp_reader)?),
             "set" => Command::Set(Set::from_parts(&mut resp_reader)?),
+            "incr" => Command::Incr(Incr::from_parts(&mut resp_reader)?),
             "get" => Command::Get(Get::from_parts(&mut resp_reader)?),
             "info" => Command::Info(Info::from_parts(&mut resp_reader)?),
             "replconf" => Command::Replconf(Replconf::from_parts(&mut resp_reader)?),
@@ -108,6 +112,7 @@ impl Command {
             Ping(cmd) => cmd.apply(dst).await,
             Unknown(cmd) => cmd.apply(dst).await,
             Set(cmd) => cmd.apply(&db, dst).await,
+            Incr(cmd) => cmd.apply(&db, dst).await,
             Get(cmd) => cmd.apply(&db, dst).await,
             Keys(cmd) => cmd.apply(&db, dst).await,
             Type(cmd) => cmd.apply(&db, dst).await,
@@ -147,6 +152,7 @@ impl Command {
             Command::XAdd(_) => "xadd".to_string(),
             Command::XRange(_) => "xrange".to_string(),
             Command::XRead(_) => "xread".to_string(),
+            Command::Incr(_) => "incr".to_string(),
             Command::Unknown(_) => "unknown".into(),
         }
     }
