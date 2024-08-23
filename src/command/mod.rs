@@ -1,5 +1,6 @@
 pub mod config;
 pub mod echo;
+pub mod exec;
 pub mod get;
 pub mod incr;
 pub mod info;
@@ -22,6 +23,7 @@ use std::{
 use bytes::Bytes;
 use config::Config;
 use echo::Echo;
+use exec::Exec;
 use get::Get;
 use incr::Incr;
 use info::Info;
@@ -58,6 +60,7 @@ pub enum Command {
     XRead(XRead),
     Incr(Incr),
     Multi(Multi),
+    Exec(Exec),
 }
 
 impl Command {
@@ -87,6 +90,7 @@ impl Command {
             "xrange" => Command::XRange(XRange::from_parts(&mut resp_reader)?),
             "xread" => Command::XRead(XRead::from_parts(&mut resp_reader)?),
             "multi" => Command::Multi(Multi::from_parts(&mut resp_reader)?),
+            "exec" => Command::Exec(Exec::from_parts(&mut resp_reader)?),
             _ => panic!("Unexpected command"),
         };
 
@@ -107,10 +111,10 @@ impl Command {
         offset: Option<&AtomicUsize>,
         replicas: Arc<RwLock<Vec<Connection>>>,
         config: ServerConfig,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<Option<RESP>> {
         use Command::*;
 
-        let resp = match self {
+        match self {
             Config(cmd) => cmd.apply(config).await,
             Echo(cmd) => cmd.apply(dst).await,
             Ping(cmd) => cmd.apply(dst).await,
@@ -128,17 +132,19 @@ impl Command {
             XRange(cmd) => cmd.apply(&db).await,
             XRead(cmd) => cmd.apply(&db).await,
             Multi(cmd) => cmd.apply().await,
-        };
-
-        if let Ok(Some(resp)) = resp {
-            if !dst.is_master {
-                dst.write_frame(&resp).await?;
-            }
-            return Ok(());
-        } else {
-            // println!("Command: {} applied: {:?}");
-            return Ok(());
+            Exec(cmd) => cmd.apply().await,
         }
+
+        // if let Ok(Some(resp)) = resp {
+        //     if !dst.is_master {
+        //         // dst.write_frame(&resp).await?;
+        //         return Ok(Some(resp));
+        //     }
+        //     return Ok(None);
+        // } else {
+        //     // println!("Command: {} applied: {:?}");
+        //     return Ok(None);
+        // }
     }
 
     pub fn get_name(&self) -> String {
@@ -158,7 +164,8 @@ impl Command {
             Command::XRange(_) => "xrange".to_string(),
             Command::XRead(_) => "xread".to_string(),
             Command::Incr(_) => "incr".to_string(),
-            Command::Multi(_) => "incr".to_string(),
+            Command::Multi(_) => "multi".to_string(),
+            Command::Exec(_) => "exec".to_string(),
             Command::Unknown(_) => "unknown".into(),
         }
     }

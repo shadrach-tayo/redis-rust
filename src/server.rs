@@ -312,14 +312,43 @@ impl Handler {
             };
 
             if self.is_multi {
-                println!("Queue commands");
-                self.transaction.push(resp);
-                self.connection
-                    .write_frame(&RESP::Simple("QUEUED".to_string()))
-                    .await?;
-            } else {
-                println!("Data: {:?}", &resp);
+                // Map RESP to a Command
+                let command = Command::from_resp(resp.clone())?;
 
+                match command {
+                    Command::Exec(_) => {
+                        let mut responses = RESP::array();
+
+                        for queued in self.transaction.iter() {
+                            let command = Command::from_resp(queued.clone())?;
+                            let response = command
+                                .apply(
+                                    &mut self.connection,
+                                    &self.db,
+                                    None,
+                                    self.replicas.clone(),
+                                    self.config.clone(),
+                                )
+                                .await?;
+                            if let Some(resp) = response {
+                                responses.push(resp);
+                            }
+                        }
+
+                        self.connection.write_frame(&responses).await?;
+
+                        self.is_multi = false;
+                        self.transaction.truncate(0);
+                    }
+                    _ => {
+                        println!("Queue commands");
+                        self.transaction.push(resp);
+                        self.connection
+                            .write_frame(&RESP::Simple("QUEUED".to_string()))
+                            .await?;
+                    }
+                }
+            } else {
                 // Map RESP to a Command
                 let command = Command::from_resp(resp.clone())?;
 
@@ -368,6 +397,11 @@ impl Handler {
                         Command::Multi(_) => {
                             self.is_multi = true;
                         }
+                        Command::Exec(_) => {
+                            self.connection
+                                .write_frame(&RESP::Error("ERR EXEC without MULTI".to_string()))
+                                .await?;
+                        }
                         _ => {}
                     },
                     Role::Slave => {}
@@ -388,7 +422,7 @@ impl Handler {
                     );
                 }
 
-                command
+                let resp = command
                     .apply(
                         &mut self.connection,
                         &self.db,
@@ -397,6 +431,12 @@ impl Handler {
                         self.config.clone(),
                     )
                     .await?;
+
+                if let Some(resp) = resp {
+                    if !self.connection.is_master {
+                        self.connection.write_frame(&resp).await?;
+                    }
+                }
             }
         }
         Ok(())
