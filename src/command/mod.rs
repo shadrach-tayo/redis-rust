@@ -139,17 +139,6 @@ impl Command {
             Exec(cmd) => cmd.apply().await,
             Discard(cmd) => cmd.apply().await,
         }
-
-        // if let Ok(Some(resp)) = resp {
-        //     if !dst.is_master {
-        //         // dst.write_frame(&resp).await?;
-        //         return Ok(Some(resp));
-        //     }
-        //     return Ok(None);
-        // } else {
-        //     // println!("Command: {} applied: {:?}");
-        //     return Ok(None);
-        // }
     }
 
     pub fn get_name(&self) -> String {
