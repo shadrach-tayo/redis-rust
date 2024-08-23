@@ -3,22 +3,22 @@ use bytes::Bytes;
 use crate::{resp::RESP, RespReader, RespReaderError};
 
 #[derive(Debug, Default)]
-pub struct Exec;
+pub struct Discard;
 
-impl Exec {
-    /// contruct new Exec command
+impl Discard {
+    /// contruct new Discard command
     pub fn new() -> Self {
-        Exec {}
+        Discard {}
     }
 
-    /// Construct new Exec command by consuming the RespReader
+    /// Construct new Discard command by consuming the RespReader
     ///
     /// # default
     ///
-    /// Return `Exec::default` if RespReader has no stream left
+    /// Return `Discard::default` if RespReader has no stream left
     /// otherwise return the error
     pub fn from_parts(_reader: &mut RespReader) -> Result<Self, RespReaderError> {
-        Ok(Exec {})
+        Ok(Discard {})
     }
 
     /// Apply the echo command and write to the Tcp connection stream
@@ -27,11 +27,11 @@ impl Exec {
     }
 }
 
-/// Convert Exec command back into an equivalent `RESP`
-impl From<Exec> for RESP {
-    fn from(_value: Exec) -> Self {
+/// Convert Discard command back into an equivalent `RESP`
+impl From<Discard> for RESP {
+    fn from(_value: Discard) -> Self {
         let mut resp = RESP::array();
-        resp.push_bulk(Bytes::from("exec"));
+        resp.push_bulk(Bytes::from("discard"));
         resp
     }
 }

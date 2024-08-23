@@ -340,6 +340,13 @@ impl Handler {
                         self.is_multi = false;
                         self.transaction.truncate(0);
                     }
+                    Command::Discard(_) => {
+                        self.is_multi = false;
+                        self.transaction.truncate(0);
+                        self.connection
+                            .write_frame(&RESP::Simple("OK".to_string()))
+                            .await?;
+                    }
                     _ => {
                         println!("Queue commands");
                         self.transaction.push(resp);
@@ -400,6 +407,11 @@ impl Handler {
                         Command::Exec(_) => {
                             self.connection
                                 .write_frame(&RESP::Error("ERR EXEC without MULTI".to_string()))
+                                .await?;
+                        }
+                        Command::Discard(_) => {
+                            self.connection
+                                .write_frame(&RESP::Error("ERR DISCARD without MULTI".to_string()))
                                 .await?;
                         }
                         _ => {}

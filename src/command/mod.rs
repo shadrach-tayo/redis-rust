@@ -1,4 +1,5 @@
 pub mod config;
+pub mod discard;
 pub mod echo;
 pub mod exec;
 pub mod get;
@@ -22,6 +23,7 @@ use std::{
 
 use bytes::Bytes;
 use config::Config;
+use discard::Discard;
 use echo::Echo;
 use exec::Exec;
 use get::Get;
@@ -61,6 +63,7 @@ pub enum Command {
     Incr(Incr),
     Multi(Multi),
     Exec(Exec),
+    Discard(Discard),
 }
 
 impl Command {
@@ -91,6 +94,7 @@ impl Command {
             "xread" => Command::XRead(XRead::from_parts(&mut resp_reader)?),
             "multi" => Command::Multi(Multi::from_parts(&mut resp_reader)?),
             "exec" => Command::Exec(Exec::from_parts(&mut resp_reader)?),
+            "discard" => Command::Discard(Discard::from_parts(&mut resp_reader)?),
             _ => panic!("Unexpected command"),
         };
 
@@ -133,6 +137,7 @@ impl Command {
             XRead(cmd) => cmd.apply(&db).await,
             Multi(cmd) => cmd.apply().await,
             Exec(cmd) => cmd.apply().await,
+            Discard(cmd) => cmd.apply().await,
         }
 
         // if let Ok(Some(resp)) = resp {
@@ -166,6 +171,7 @@ impl Command {
             Command::Incr(_) => "incr".to_string(),
             Command::Multi(_) => "multi".to_string(),
             Command::Exec(_) => "exec".to_string(),
+            Command::Discard(_) => "discard".to_string(),
             Command::Unknown(_) => "unknown".into(),
         }
     }
