@@ -84,12 +84,8 @@ impl<F: Filter, B: Builder> RdbParser<F, B> {
 
         let mut cursor = Cursor::new(&buffer[..]);
 
-        println!("Buffer size: {}", buffer.len());
-
         verify_magic(&mut cursor)?;
         verify_version(&mut cursor)?;
-
-        // let filter = DefaultFilter::new();
 
         let mut db_count = 0;
 

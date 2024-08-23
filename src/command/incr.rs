@@ -27,9 +27,10 @@ impl Incr {
 
     /// Apply the echo command and write to the Tcp connection stream
     pub async fn apply(self, db: &Db, _dst: &mut Connection) -> crate::Result<Option<RESP>> {
-        // set the value in the shared cache.
         let value = db.get(&self.key);
-        let mut resp = RESP::Simple("OK".into());
+
+        #[allow(unused_assignments)]
+        let mut resp = RESP::Simple("OKi".into());
 
         match value {
             Some(value_type) => match value_type {

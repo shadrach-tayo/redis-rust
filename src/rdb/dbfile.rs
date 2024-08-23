@@ -36,7 +36,6 @@ impl Database {
             if expiry.is_none() {
                 None
             } else {
-                println!("Expires at: {:?}", expiry);
                 let now = SystemTime::now();
                 let elasped = now
                     .duration_since(UNIX_EPOCH)
@@ -61,11 +60,6 @@ impl Database {
             }
         };
 
-        println!(
-            "Set Value: {key}, {:?}, {:?}",
-            String::from_utf8(value.clone()),
-            expire_at
-        );
         self.hash.borrow_mut().insert(
             key.clone(),
             Value {
@@ -83,7 +77,6 @@ impl Database {
     }
 
     fn get_db(&self) -> DerivedDatabase {
-        println!("Keys: {:?}", self.hash.borrow().keys());
         DerivedDatabase {
             entries: self.hash.borrow_mut().to_owned(),
             expirations: self.expirations.borrow_mut().to_owned(),

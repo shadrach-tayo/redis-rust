@@ -68,14 +68,21 @@ pub struct Handler {
     /// encoding and decoding
     pub connection: Connection,
 
-    // Marker to indicate if wraped connection is a replica or not
+    /// Marker to indicate if wraped connection is a replica or not
     pub is_replica: bool,
 
-    // keep track of server config
+    /// keep track of server config
     pub config: ServerConfig,
 
-    // keep track of connected slave
+    /// keep track of connected slave
     pub replicas: Arc<RwLock<Vec<Connection>>>,
+
+    /// Indicate client is executing a transaction
+    /// True if the last command is MULTI
+    pub is_multi: bool,
+
+    /// queued commands to be executed as part of a transaction
+    pub transaction: Vec<RESP>,
 }
 
 /// Run the redis server
@@ -215,6 +222,8 @@ impl Listener {
             is_replica: false,
             replicas: self.replicas.clone(),
             config: self.config.clone(),
+            is_multi: false,
+            transaction: vec![],
         };
 
         tokio::spawn(async move {
@@ -251,6 +260,8 @@ impl Listener {
                 is_replica: false,
                 config: self.config.clone(),
                 replicas: self.replicas.clone(),
+                is_multi: false,
+                transaction: vec![],
             };
 
             let sender = Arc::clone(&sender);
@@ -300,82 +311,93 @@ impl Handler {
                 None => continue,
             };
 
-            println!("Data: {:?}", &resp);
+            if self.is_multi {
+                println!("Queue commands");
+                self.transaction.push(resp);
+                self.connection
+                    .write_frame(&RESP::Simple("QUEUED".to_string()))
+                    .await?;
+            } else {
+                println!("Data: {:?}", &resp);
 
-            // Map RESP to a Command
-            let command = Command::from_resp(resp.clone())?;
+                // Map RESP to a Command
+                let command = Command::from_resp(resp.clone())?;
 
-            match self.config.role {
-                Role::Master => match command {
-                    Command::Set(_) => {
-                        let replicas = &mut *self.replicas.write().await;
-                        let mut remove = vec![];
+                match self.config.role {
+                    Role::Master => match command {
+                        Command::Set(_) => {
+                            let replicas = &mut *self.replicas.write().await;
+                            let mut remove = vec![];
 
-                        for (idx, connection) in replicas.into_iter().enumerate() {
-                            let repl_result = connection.write_frame(&resp).await;
-                            println!(
-                                "Replicate: {}, offset: {:?}, Result: {:?}",
-                                idx + 1,
-                                connection.repl_offset.load(Ordering::SeqCst),
-                                repl_result
-                            );
+                            for (idx, connection) in replicas.into_iter().enumerate() {
+                                let repl_result = connection.write_frame(&resp).await;
+                                println!(
+                                    "Replicate: {}, offset: {:?}, Result: {:?}",
+                                    idx + 1,
+                                    connection.repl_offset.load(Ordering::SeqCst),
+                                    repl_result
+                                );
 
-                            if repl_result.is_err() {
-                                remove.push(idx);
+                                if repl_result.is_err() {
+                                    remove.push(idx);
+                                }
+                            }
+
+                            for idx in remove.iter() {
+                                replicas.swap_remove(*idx);
+                                println!("Remove Replica: {idx}");
                             }
                         }
+                        Command::PSync(_) => {
+                            command
+                                .apply(
+                                    &mut self.connection,
+                                    &self.db,
+                                    None,
+                                    self.replicas.clone(),
+                                    self.config.clone(),
+                                )
+                                .await?;
 
-                        for idx in remove.iter() {
-                            replicas.swap_remove(*idx);
-                            println!("Remove Replica: {idx}");
+                            // reset repl offset
+                            // self.connection.flush_stream().await?;
+                            self.connection.repl_offset.store(0, Ordering::SeqCst);
+                            self.replicas.write().await.push(self.connection);
+                            return Ok(());
                         }
-                    }
-                    Command::PSync(_) => {
-                        command
-                            .apply(
-                                &mut self.connection,
-                                &self.db,
-                                None,
-                                self.replicas.clone(),
-                                self.config.clone(),
-                            )
-                            .await?;
-
-                        // reset repl offset
-                        // self.connection.flush_stream().await?;
-                        self.connection.repl_offset.store(0, Ordering::SeqCst);
-                        self.replicas.write().await.push(self.connection);
-                        return Ok(());
-                    }
-                    _ => {}
-                },
-                Role::Slave => {}
-            }
-
-            if command.affects_offset() {
-                self.config
-                    .master_repl_offset
-                    .fetch_add(command_byte_size as u64, Ordering::SeqCst);
-                for connection in &mut *self.replicas.write().await {
-                    connection
-                        .repl_offset
-                        .fetch_add(command_byte_size as u64, Ordering::SeqCst);
+                        Command::Multi(_) => {
+                            self.is_multi = true;
+                        }
+                        _ => {}
+                    },
+                    Role::Slave => {}
                 }
-                println!(
-                    "Increase Master_repl_offset: {}",
-                    self.config.master_repl_offset.load(Ordering::SeqCst)
-                );
-            }
 
-            command
-                .apply(
-                    &mut self.connection,
-                    &self.db,
-                    None,
-                    self.replicas.clone(),
-                    self.config.clone(),
-                )
-                .await?;
+                if command.affects_offset() {
+                    self.config
+                        .master_repl_offset
+                        .fetch_add(command_byte_size as u64, Ordering::SeqCst);
+                    for connection in &mut *self.replicas.write().await {
+                        connection
+                            .repl_offset
+                            .fetch_add(command_byte_size as u64, Ordering::SeqCst);
+                    }
+                    println!(
+                        "Increase Master_repl_offset: {}",
+                        self.config.master_repl_offset.load(Ordering::SeqCst)
+                    );
+                }
+
+                command
+                    .apply(
+                        &mut self.connection,
+                        &self.db,
+                        None,
+                        self.replicas.clone(),
+                        self.config.clone(),
+                    )
+                    .await?;
+            }
         }
         Ok(())
     }

@@ -4,6 +4,7 @@ pub mod get;
 pub mod incr;
 pub mod info;
 pub mod keys;
+pub mod multi;
 pub mod ping;
 pub mod psync;
 pub mod replconf;
@@ -25,6 +26,7 @@ use get::Get;
 use incr::Incr;
 use info::Info;
 use keys::Keys;
+use multi::Multi;
 use ping::Ping;
 pub use psync::PSync;
 pub use replconf::Replconf;
@@ -55,6 +57,7 @@ pub enum Command {
     XRange(XRange),
     XRead(XRead),
     Incr(Incr),
+    Multi(Multi),
 }
 
 impl Command {
@@ -83,6 +86,7 @@ impl Command {
             "xadd" => Command::XAdd(XAdd::from_parts(&mut resp_reader)?),
             "xrange" => Command::XRange(XRange::from_parts(&mut resp_reader)?),
             "xread" => Command::XRead(XRead::from_parts(&mut resp_reader)?),
+            "multi" => Command::Multi(Multi::from_parts(&mut resp_reader)?),
             _ => panic!("Unexpected command"),
         };
 
@@ -123,6 +127,7 @@ impl Command {
             XAdd(cmd) => cmd.apply(&db).await,
             XRange(cmd) => cmd.apply(&db).await,
             XRead(cmd) => cmd.apply(&db).await,
+            Multi(cmd) => cmd.apply().await,
         };
 
         if let Ok(Some(resp)) = resp {
@@ -153,6 +158,7 @@ impl Command {
             Command::XRange(_) => "xrange".to_string(),
             Command::XRead(_) => "xread".to_string(),
             Command::Incr(_) => "incr".to_string(),
+            Command::Multi(_) => "incr".to_string(),
             Command::Unknown(_) => "unknown".into(),
         }
     }
