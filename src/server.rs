@@ -195,7 +195,6 @@ pub async fn run(
 impl Listener {
     pub fn init_repl_state(&mut self) {
         let repl_id = gen_rand_string(40);
-        println!("REPL ID: {}", gen_rand_string(40));
         self.db.db().set_repl_id(repl_id);
     }
 
