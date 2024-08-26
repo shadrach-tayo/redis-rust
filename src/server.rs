@@ -324,7 +324,7 @@ impl Handler {
     /// Request RESP are parsed from the socket buffer and processed using `Command`
     /// Response is written back to the socket
     pub async fn run(mut self, _sender: Arc<broadcast::Sender<RESP>>) -> crate::Result<()> {
-        while !self.shutdown.is_shutdown() {
+        while !self.shutdown.is_shutdown() && !self.connection.closed {
             // let resp = self.connection.read_resp().await?;
 
             // let (resp, command_byte_size) = match resp {
@@ -426,8 +426,6 @@ impl Handler {
                                 )
                                 .await?;
 
-                            // reset repl offset
-                            // self.connection.flush_stream().await?;
                             self.connection.repl_offset.store(0, Ordering::SeqCst);
                             self.replicas.write().await.push(self.connection);
                             return Ok(());
@@ -459,10 +457,6 @@ impl Handler {
                             .repl_offset
                             .fetch_add(size as u64, Ordering::SeqCst);
                     }
-                    println!(
-                        "Increase Master_repl_offset: {}",
-                        self.config.master_repl_offset.load(Ordering::SeqCst)
-                    );
                 }
 
                 let resp = command
@@ -489,9 +483,7 @@ impl Handler {
     ///
     /// Does the same as the run method above but
     pub async fn run_master(&mut self) -> crate::Result<()> {
-        // let role = self.db.get_role();
         let offset = AtomicUsize::new(0);
-        // let slave_count = AtomicUsize::new(0);
 
         while !self.shutdown.is_shutdown() {
             // let resp = self.connection.read_resp().await?;
