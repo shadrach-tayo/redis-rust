@@ -33,8 +33,8 @@ impl Get {
 
         let response = if let Some(value) = value {
             match value {
-                ValueType::Stream(stream) => {
-                    println!("Get stream: {:?}", stream);
+                ValueType::Stream(_) => {
+                    // println!("Get stream: {:?}", stream);
                     RESP::Null
                 }
                 ValueType::String(bytes) => RESP::Bulk(bytes),

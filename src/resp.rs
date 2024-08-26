@@ -139,11 +139,10 @@ impl RESP {
 
     #[allow(unused)]
     /// Validate if a message can be decoded from the `src`
-    pub fn check_resp(src: &mut Cursor<&[u8]>) -> Result<(), RESPError> {
+    pub fn check(src: &mut Cursor<&[u8]>) -> Result<(), RESPError> {
         match get_u8(src)? {
             b'+' => {
                 // strings resp
-                println!("get u8");
                 get_line(src)?;
                 Ok(())
             }
@@ -151,26 +150,19 @@ impl RESP {
                 // arrays resp
                 let len = get_decimal(src)?;
                 for i in 0..len {
-                    Self::check_resp(src)?;
+                    Self::check(src)?;
                 }
                 Ok(())
             }
             b'$' => {
                 // bulk strings resp
                 if b'-' == peak_u8(src)? {
-                    let line = get_line(src)?;
-                    if line != b"-1" {
-                        return Err("Invalid input".into());
-                    }
+                    // '-1\r\n'
+                    skip(src, 4)?;
                     Ok(())
                 } else {
                     let len = get_decimal(src)?.try_into()?;
 
-                    if src.remaining() < len {
-                        return Err(RESPError::Incomplete);
-                    }
-
-                    let data = Bytes::copy_from_slice(&src.chunk()[..len]);
                     skip(src, len)?;
 
                     let pos = src.position() as usize;
@@ -184,10 +176,8 @@ impl RESP {
                     if clrf {
                         // skip that number of bytes + 2
                         skip(src, 2)?;
-                        Ok(())
-                    } else {
-                        Ok(())
                     }
+                    Ok(())
                 }
             }
             b':' => {
