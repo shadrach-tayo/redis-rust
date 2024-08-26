@@ -529,11 +529,3 @@ impl Handler {
         Ok(())
     }
 }
-
-// todo: implement a shutdown signal broadcaster/notifier
-// Impl Shutdown struct (takes broadcast notifier)
-//  - has a recv() method that listens for shutdown signal and flips the shutdown flag
-//  - has a shutdown() method that returns the inner shutdown flag
-//
-// Impl a shutdown/notifier on the Listener, pass the shutdown to handlers with a new notifier.subscribe()
-//
