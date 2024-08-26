@@ -97,7 +97,7 @@ impl Connection {
 
         match RESP::check(&mut cursor) {
             Ok(_) => {
-                // let len = cursor.position();
+                let len = cursor.position() as usize;
 
                 // println!("checked: {len}, {}", size);
                 cursor.set_position(0);
@@ -106,18 +106,19 @@ impl Connection {
 
                 // get the current position of the cursor after the resp is
                 // successfully parsed
-                let pos = cursor.position() as usize;
+                // let pos = cursor.position() as usize;
 
                 // advance the connection buffer by the pos
                 // This discards the read buffer and next calls to read from the
                 // buffer starts from pos.
                 // self.buffer.advance(pos);
-                let _ = self.buffer.split_to(pos);
+                // let _ = self.buffer.split_to(pos);
 
                 // cursor.advance(len as usize);
-                // self.buffer.advance(len as usize);
+                self.buffer.advance(len as usize);
 
                 // return Ok(Some((resp, pos)));
+                println!("Parsed: {:?}, size: {size}, pos: {len}", resp);
                 return Ok(Some((resp, size)));
             }
             // Not enough data present to parse a RESP
