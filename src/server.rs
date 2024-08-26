@@ -464,7 +464,10 @@ impl Handler {
                 None => continue,
             };
 
-            println!("Replica::DATA: {:?}, total_offset: {:?}", &resp, offset);
+            println!(
+                "Replica::DATA: {:?}, total_offset: {:?}, {size}",
+                &resp, offset
+            );
 
             // Map RESP to a Command
             let command = Command::from_resp(resp)?;

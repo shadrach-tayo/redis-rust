@@ -175,8 +175,6 @@ impl Command {
     pub fn affects_offset(&self) -> bool {
         match self {
             Command::Set(_) => true,
-            // Command::Replconf(_) => true,
-            // Command::Ping(_) => true,
             _ => false,
         }
     }
