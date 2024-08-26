@@ -13,6 +13,7 @@
 //
 
 use std::{
+    future::Future,
     path::Path,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -23,7 +24,7 @@ use std::{
 
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::{broadcast, RwLock},
+    sync::{broadcast, mpsc, RwLock},
     time,
 };
 
@@ -34,7 +35,7 @@ use crate::{
     ping::Ping,
     rdb::{self, DefaultFilter, RdbBuilder, RdbParser},
     resp::RESP,
-    CliConfig, Command, Db, DbGuard, PSync, Replconf, ReplicaInfo, Role,
+    CliConfig, Command, Db, DbGuard, PSync, Replconf, ReplicaInfo, Role, Shutdown,
 };
 
 #[derive(Debug)]
@@ -45,8 +46,6 @@ pub struct Listener {
     // Tcp listner
     pub listener: TcpListener,
 
-    // pub master_connection: Option<Connection>,
-
     // current node's network config
     // (host, port)
     // network_config: Option<(String, u64)>,
@@ -54,6 +53,10 @@ pub struct Listener {
 
     // keep track of connected slave
     replicas: Arc<RwLock<Vec<Connection>>>,
+
+    notify_shutdown: broadcast::Sender<()>,
+
+    shutdown_complete_tx: mpsc::Sender<()>,
 }
 
 pub struct Handler {
@@ -82,6 +85,12 @@ pub struct Handler {
 
     /// queued commands to be executed as part of a transaction
     pub transaction: Vec<RESP>,
+
+    // shutdown listener
+    shutdown: Shutdown,
+
+    // handle to shutdown_complete_tx
+    _shutdown_complete_tx: mpsc::Sender<()>,
 }
 
 /// Run the redis server
@@ -89,7 +98,14 @@ pub struct Handler {
 /// Accepts a new connection from the TcpListener in the `Listener`
 /// for every accept tcp socket, a new async task is spawned to handle
 /// the connection.
-pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> {
+pub async fn run(
+    listener: TcpListener,
+    config: CliConfig,
+    shutdown: impl Future,
+) -> crate::Result<()> {
+    let (notify_shutdown, _) = broadcast::channel::<()>(1);
+    let (shutdown_cmpl_tx, mut shutdown_cmpl_rx) = mpsc::channel::<()>(1);
+
     let mut master_repl_id = None;
     let role = if config.is_replication {
         Role::Slave
@@ -133,7 +149,14 @@ pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> 
         None => DbGuard::new(),
     };
 
-    let mut server = Listener::new(listener, db, server_config);
+    let mut server = Listener {
+        listener,
+        db,
+        config: server_config,
+        replicas: Arc::new(RwLock::new(vec![])),
+        shutdown_complete_tx: shutdown_cmpl_tx,
+        notify_shutdown,
+    };
 
     if let Some(master) = config.master {
         let connection = server.handshake(master).await?;
@@ -146,33 +169,33 @@ pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> 
         result = server.run() => {
             if let Err(err) = result {
                 println!("Server error {:?}", err);
-                Err(err)
-            } else {
-                Ok(())
+                // error!("");
             }
+        },
+        _ = shutdown => {
+            println!("Shutdown redis server");
         }
     }
+
+    let Listener {
+        notify_shutdown,
+        shutdown_complete_tx,
+        ..
+    } = server;
+    drop(notify_shutdown);
+
+    drop(shutdown_complete_tx);
+
+    let _ = shutdown_cmpl_rx.recv().await;
+
+    Ok(())
 }
 
 /// Listner struct implementations
 impl Listener {
-    pub fn new(listener: TcpListener, db: DbGuard, config: ServerConfig) -> Self {
-        Self {
-            listener,
-            db,
-            config,
-            replicas: Arc::new(RwLock::new(vec![])),
-        }
-    }
-
-    // pub fn set_network_config(&mut self, config: (String, u64)) {
-    //     // self.network_config = Some(config);
-    // }
     pub fn init_repl_state(&mut self) {
-        // self.db.db().set_role(Role::Master);
-        self.db
-            .db()
-            .set_repl_id("8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".into());
+        let repl_id = gen_rand_string(40);
+        self.db.db().set_repl_id(repl_id);
     }
 
     /// Initiate a handshake protocol between this replica node
@@ -218,6 +241,8 @@ impl Listener {
             config: self.config.clone(),
             is_multi: false,
             transaction: vec![],
+            shutdown: Shutdown::new(self.notify_shutdown.subscribe()),
+            _shutdown_complete_tx: self.shutdown_complete_tx.clone(),
         };
 
         tokio::spawn(async move {
@@ -256,6 +281,8 @@ impl Listener {
                 replicas: self.replicas.clone(),
                 is_multi: false,
                 transaction: vec![],
+                shutdown: Shutdown::new(self.notify_shutdown.subscribe()),
+                _shutdown_complete_tx: self.shutdown_complete_tx.clone(),
             };
 
             let sender = Arc::clone(&sender);
@@ -297,11 +324,21 @@ impl Handler {
     /// Request RESP are parsed from the socket buffer and processed using `Command`
     /// Response is written back to the socket
     pub async fn run(mut self, _sender: Arc<broadcast::Sender<RESP>>) -> crate::Result<()> {
-        while !self.connection.closed {
-            let resp = self.connection.read_resp().await?;
+        while !self.shutdown.is_shutdown() {
+            // let resp = self.connection.read_resp().await?;
 
-            let (resp, command_byte_size) = match resp {
-                Some((resp, bytes_size)) => (resp, bytes_size),
+            // let (resp, command_byte_size) = match resp {
+            //     Some((resp, bytes_size)) => (resp, bytes_size),
+            //     None => continue,
+            // };
+
+            let resp = tokio::select! {
+                res = self.connection.read_resp() => res?,
+                _ = self.shutdown.recv() => return Ok(())
+            };
+
+            let (resp, size) = match resp {
+                Some(resp_and_size) => resp_and_size,
                 None => continue,
             };
 
@@ -416,11 +453,11 @@ impl Handler {
                 if command.affects_offset() {
                     self.config
                         .master_repl_offset
-                        .fetch_add(command_byte_size as u64, Ordering::SeqCst);
+                        .fetch_add(size as u64, Ordering::SeqCst);
                     for connection in &mut *self.replicas.write().await {
                         connection
                             .repl_offset
-                            .fetch_add(command_byte_size as u64, Ordering::SeqCst);
+                            .fetch_add(size as u64, Ordering::SeqCst);
                     }
                     println!(
                         "Increase Master_repl_offset: {}",
@@ -456,8 +493,13 @@ impl Handler {
         let offset = AtomicUsize::new(0);
         // let slave_count = AtomicUsize::new(0);
 
-        while !self.connection.closed {
-            let resp = self.connection.read_resp().await?;
+        while !self.shutdown.is_shutdown() {
+            // let resp = self.connection.read_resp().await?;
+
+            let resp = tokio::select! {
+                res = self.connection.read_resp() => res?,
+                _ = self.shutdown.recv() => return Ok(())
+            };
 
             let (resp, size) = match resp {
                 Some(resp_and_size) => resp_and_size,
@@ -487,3 +529,11 @@ impl Handler {
         Ok(())
     }
 }
+
+// todo: implement a shutdown signal broadcaster/notifier
+// Impl Shutdown struct (takes broadcast notifier)
+//  - has a recv() method that listens for shutdown signal and flips the shutdown flag
+//  - has a shutdown() method that returns the inner shutdown flag
+//
+// Impl a shutdown/notifier on the Listener, pass the shutdown to handlers with a new notifier.subscribe()
+//

@@ -18,7 +18,7 @@ async fn main() -> Result<(), Error> {
 
     let listener = TcpListener::bind(addr).await?;
 
-    server::run(listener, config).await?;
+    server::run(listener, config, tokio::signal::ctrl_c()).await?;
 
     Ok(())
 }

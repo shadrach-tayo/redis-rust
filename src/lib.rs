@@ -6,6 +6,7 @@ pub mod rdb;
 pub mod replication;
 pub mod resp;
 pub mod server;
+mod shutdown;
 pub mod util;
 pub mod value;
 
@@ -16,6 +17,7 @@ pub use resp::RESPError;
 pub use command::*;
 pub use db::*;
 pub use replication::*;
+use shutdown::Shutdown;
 pub use util::gen_rand_string;
 pub use value::*;
 
