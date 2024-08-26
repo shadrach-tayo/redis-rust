@@ -32,6 +32,7 @@ use tokio::{
 use crate::{
     config::ServerConfig,
     connection::Connection,
+    gen_rand_string,
     ping::Ping,
     rdb::{self, DefaultFilter, RdbBuilder, RdbParser},
     resp::RESP,
@@ -97,7 +98,7 @@ pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> 
         Role::Slave
     } else {
         // TODO: use random strng generator
-        master_repl_id = Some("8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".into());
+        master_repl_id = Some(gen_rand_string(40)); // Some("8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".into());
         Role::Master
     };
 

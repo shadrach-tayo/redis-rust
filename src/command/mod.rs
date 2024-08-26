@@ -307,6 +307,7 @@ impl std::fmt::Display for RespReaderError {
     }
 }
 
+#[cfg(test)]
 mod test {
     // write tests for the RespReader
     #[test]

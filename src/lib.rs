@@ -6,6 +6,7 @@ pub mod rdb;
 pub mod replication;
 pub mod resp;
 pub mod server;
+pub mod util;
 pub mod value;
 
 pub use config::{parse_config, CliConfig};
@@ -15,6 +16,7 @@ pub use resp::RESPError;
 pub use command::*;
 pub use db::*;
 pub use replication::*;
+pub use util::gen_rand_string;
 pub use value::*;
 
 /// Error returned from most functions
