@@ -119,7 +119,7 @@ impl Connection {
 
                 // return Ok(Some((resp, pos)));
                 println!("Parsed: {:?}, size: {size}, pos: {len}", resp);
-                return Ok(Some((resp, size)));
+                return Ok(Some((resp, len)));
             }
             // Not enough data present to parse a RESP
             Err(crate::RESPError::Incomplete) => Ok(None),
