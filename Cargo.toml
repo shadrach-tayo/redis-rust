@@ -25,3 +25,4 @@ thiserror = "1.0.32"                                # error handling
 tokio = { version = "1.23.0", features = ["full"] } # async networking
 byteorder = "1.5.0"
 futures = "0.3.30"
+rand = "0.8.5"

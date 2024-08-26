@@ -3,13 +3,14 @@ use std::{
     time::UNIX_EPOCH,
 };
 
+use rand::{thread_rng, Rng};
+
 pub fn gen_rand_string(len: usize) -> String {
-    let mut rnd_str = String::new();
-    for _ in 0..len {
-        let rnd_char = std::char::from_u32(gen_rand_number() % 27 + 96).unwrap();
-        rnd_str.push(rnd_char);
-    }
-    rnd_str
+    thread_rng()
+        .sample_iter(&rand::distributions::Alphanumeric)
+        .take(len)
+        .map(char::from)
+        .collect()
 }
 
 pub fn gen_rand_number() -> u32 {
