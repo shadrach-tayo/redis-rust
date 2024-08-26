@@ -12,8 +12,6 @@
 // applies the command on the tcp connection
 //
 
-// use std::net::TcpListener;
-
 use std::{
     path::Path,
     sync::{
@@ -91,18 +89,16 @@ pub struct Handler {
 /// Accepts a new connection from the TcpListener in the `Listener`
 /// for every accept tcp socket, a new async task is spawned to handle
 /// the connection.
-#[allow(unused)]
 pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> {
     let mut master_repl_id = None;
     let role = if config.is_replication {
         Role::Slave
     } else {
-        // TODO: use random strng generator
-        master_repl_id = Some(gen_rand_string(40)); // Some("8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".into());
+        master_repl_id = Some(gen_rand_string(40));
         Role::Master
     };
 
-    let mut server_config = ServerConfig {
+    let server_config = ServerConfig {
         role,
         master_repl_id,
         dir: config.dir.clone(),
@@ -125,8 +121,6 @@ pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> 
         None
     };
 
-    println!("RDB: {:?}", rdb);
-    // println!("Empty RDB: {:?}", empty_rdb_file());
     let derived_database = if let Some(rdb) = rdb {
         let mut parser = RdbParser::new(DefaultFilter::new(), RdbBuilder::default(), rdb);
         parser.parse()?
@@ -134,7 +128,6 @@ pub async fn run(listener: TcpListener, config: CliConfig) -> crate::Result<()> 
         None
     };
 
-    println!("DerivedDatabase {:?}", &derived_database);
     let db = match derived_database {
         Some(database) => DbGuard::from_derived(database),
         None => DbGuard::new(),

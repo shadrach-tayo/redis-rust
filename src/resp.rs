@@ -98,23 +98,14 @@ impl RESP {
                         return Err(RESPError::Incomplete);
                     }
 
-                    // println!(
-                    //     "Bulk, len: {len}, data: {:?}",
-                    //     String::from_utf8_lossy(&cursor.chunk()[..len])
-                    // );
                     let data = Bytes::copy_from_slice(&cursor.chunk()[..len]);
                     skip(cursor, len)?;
 
                     let pos = cursor.position() as usize;
 
                     let clrf = if cursor.has_remaining() {
-                        // println!(
-                        //     "Check CLRF {:?}",
-                        //     String::from_utf8_lossy(&cursor.get_ref()[pos..])
-                        // );
                         &cursor.get_ref()[pos..pos + 2] == b"\r\n"
                     } else {
-                        // println!("File {:?}", String::from_utf8_lossy(&cursor.chunk()[..]));
                         false
                     };
 
@@ -148,32 +139,71 @@ impl RESP {
 
     #[allow(unused)]
     /// Validate if a message can be decoded from the `src`
-    pub fn check_frame(src: &mut Cursor<&[u8]>) -> Result<(), RESPError> {
+    pub fn check_resp(src: &mut Cursor<&[u8]>) -> Result<(), RESPError> {
         match get_u8(src)? {
             b'+' => {
                 // strings resp
                 println!("get u8");
+                get_line(src)?;
                 Ok(())
             }
             b'*' => {
                 // arrays resp
-                todo!()
+                let len = get_decimal(src)?;
+                for i in 0..len {
+                    Self::check_resp(src)?;
+                }
+                Ok(())
             }
             b'$' => {
                 // bulk strings resp
-                todo!()
+                if b'-' == peak_u8(src)? {
+                    let line = get_line(src)?;
+                    if line != b"-1" {
+                        return Err("Invalid input".into());
+                    }
+                    Ok(())
+                } else {
+                    let len = get_decimal(src)?.try_into()?;
+
+                    if src.remaining() < len {
+                        return Err(RESPError::Incomplete);
+                    }
+
+                    let data = Bytes::copy_from_slice(&src.chunk()[..len]);
+                    skip(src, len)?;
+
+                    let pos = src.position() as usize;
+
+                    let clrf = if src.has_remaining() {
+                        &src.get_ref()[pos..pos + 2] == b"\r\n"
+                    } else {
+                        false
+                    };
+
+                    if clrf {
+                        // skip that number of bytes + 2
+                        skip(src, 2)?;
+                        Ok(())
+                    } else {
+                        Ok(())
+                    }
+                }
             }
             b':' => {
                 // integers resp
-                todo!()
+                get_decimal(src)?;
+                Ok(())
             }
             b'-' => {
                 // simple errors resp
-                todo!()
+                let error = get_line(src)?.to_vec();
+                let _string = String::from_utf8(error)?;
+                Ok(())
             }
             b'_' => {
                 // null resp
-                todo!()
+                Ok(())
             }
             err => Err(format!("Error reading request {}", err).into()),
         }
@@ -181,7 +211,6 @@ impl RESP {
 }
 
 pub fn get_line<'a>(src: &'a mut Cursor<&[u8]>) -> Result<&'a [u8], RESPError> {
-    // println!("parse line");
     let start = src.position() as usize;
     let end = src.get_ref().len() - 1;
 

@@ -195,15 +195,12 @@ impl SharedDb {
                 return Some(expires_at);
             }
 
-            println!("Purging entry {}", key);
-
             state.entries.remove(key.as_str());
             state
                 .expirations
                 .remove(&(expires_at, key.clone().to_owned()));
         }
 
-        // drop(state);
         None
     }
 }

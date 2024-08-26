@@ -93,24 +93,32 @@ impl Connection {
     /// stream to a `RESP` data structure for processing
     pub fn parse_resp(&mut self) -> crate::Result<Option<(RESP, usize)>> {
         let mut cursor = Cursor::new(&self.buffer[..]);
-        let _size = self.buffer.len();
-        // println!(
-        //     "Incoming Data {:?}",
-        //     String::from_utf8_lossy(&cursor.chunk()[..])
-        // );
-        match RESP::parse_resp(&mut cursor) {
-            Ok(resp) => {
+        let size = self.buffer.len();
+
+        match RESP::check_resp(&mut cursor) {
+            Ok(_) => {
+                let len = cursor.position();
+
+                // println!("checked: {len}, {}", size);
+                cursor.set_position(0);
+
+                let resp = RESP::parse_resp(&mut cursor)?;
+
                 // get the current position of the cursor after the resp is
                 // successfully parsed
-                let pos = cursor.position() as usize;
+                // let pos = cursor.position() as usize;
 
                 // advance the connection buffer by the pos
                 // This discards the read buffer and next calls to read from the
                 // buffer starts from pos.
                 // self.buffer.advance(pos);
-                let _ = self.buffer.split_to(pos);
+                // let _ = self.buffer.split_to(pos);
 
-                return Ok(Some((resp, pos)));
+                // cursor.advance(len as usize);
+                self.buffer.advance(len as usize);
+
+                // return Ok(Some((resp, pos)));
+                return Ok(Some((resp, size)));
             }
             // Not enough data present to parse a RESP
             Err(crate::RESPError::Incomplete) => Ok(None),
