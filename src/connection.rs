@@ -93,32 +93,36 @@ impl Connection {
     /// stream to a `RESP` data structure for processing
     pub fn parse_resp(&mut self) -> crate::Result<Option<(RESP, usize)>> {
         let mut cursor = Cursor::new(&self.buffer[..]);
-        let size = self.buffer.len();
+        let _size = self.buffer.len();
 
+        // We first check if the incoming buffer is a valid RESP
+        // by parsing the Cursor through the check method of the RESP
+        // If the check returns a OK, we have a valid RESP and we can go
+        // ahead to parse the resp and return the corresponding (resp, size) tuple
+        //
+        // If the incoming buffer is not complete we return a RESPError::Incompelete arm
+        // and return Ok(None) so the we keep trying until the connection has enough buffer
+        // to extract a valid RESP data structure
+        //
+        // If the buffer is invalid we return the Err Arm
         match RESP::check(&mut cursor) {
             Ok(_) => {
+                // we store the length of the valid RESP to be parsed
                 let len = cursor.position() as usize;
 
-                // println!("checked: {len}, {}", size);
+                // the check method advances the cursor position while parsing
+                // the buffer, we have to reset it to zero before calling the
+                // parse method
                 cursor.set_position(0);
 
+                // parse the valid RESP
                 let resp = RESP::parse_resp(&mut cursor)?;
 
-                // get the current position of the cursor after the resp is
-                // successfully parsed
-                // let pos = cursor.position() as usize;
-
-                // advance the connection buffer by the pos
-                // This discards the read buffer and next calls to read from the
-                // buffer starts from pos.
-                // self.buffer.advance(pos);
-                // let _ = self.buffer.split_to(pos);
-
-                // cursor.advance(len as usize);
+                // We have to advance the connection buffer by the length
+                // of the parsed RESP buffer so we don't reuse the same buffer
+                // more than once
                 self.buffer.advance(len as usize);
 
-                // return Ok(Some((resp, pos)));
-                println!("Parsed: {:?}, size: {size}, pos: {len}", resp);
                 return Ok(Some((resp, len)));
             }
             // Not enough data present to parse a RESP
