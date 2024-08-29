@@ -325,13 +325,6 @@ impl Handler {
     /// Response is written back to the socket
     pub async fn run(mut self, _sender: Arc<broadcast::Sender<RESP>>) -> crate::Result<()> {
         while !self.shutdown.is_shutdown() && !self.connection.closed {
-            // let resp = self.connection.read_resp().await?;
-
-            // let (resp, command_byte_size) = match resp {
-            //     Some((resp, bytes_size)) => (resp, bytes_size),
-            //     None => continue,
-            // };
-
             let resp = tokio::select! {
                 res = self.connection.read_resp() => res?,
                 _ = self.shutdown.recv() => return Ok(())
@@ -486,8 +479,6 @@ impl Handler {
         let offset = AtomicUsize::new(0);
 
         while !self.shutdown.is_shutdown() {
-            // let resp = self.connection.read_resp().await?;
-
             let resp = tokio::select! {
                 res = self.connection.read_resp() => res?,
                 _ = self.shutdown.recv() => return Ok(())
@@ -497,11 +488,6 @@ impl Handler {
                 Some(resp_and_size) => resp_and_size,
                 None => continue,
             };
-
-            println!(
-                "Replica::DATA: {:?}, total_offset: {:?}, {size}",
-                &resp, offset
-            );
 
             // Map RESP to a Command
             let command = Command::from_resp(resp)?;

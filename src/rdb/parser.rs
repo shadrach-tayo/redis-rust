@@ -2,6 +2,7 @@ use std::{io::Cursor, ops::Mul, path::Path};
 
 use byteorder::ByteOrder;
 use bytes::{Buf, BytesMut};
+use redis_derive::gen_cursor_util;
 
 use crate::{rdb::Filter, Result};
 
@@ -311,53 +312,59 @@ fn bytes_to_u64(bytes: &Vec<u8>) -> crate::Result<u64> {
 }
 
 // convert to macro 👀
-pub fn get_i8(src: &mut Cursor<&[u8]>) -> crate::Result<i8> {
-    if !src.has_remaining() {
-        return Err("Invalid i8".into());
-    }
+gen_cursor_util!(get_i8);
+// pub fn get_i8(src: &mut Cursor<&[u8]>) -> crate::Result<i8> {
+//     if !src.has_remaining() {
+//         return Err("Invalid i8".into());
+//     }
 
-    Ok(src.get_i8())
-}
+//     Ok(src.get_i8())
+// }
 
-pub fn get_i16(src: &mut Cursor<&[u8]>) -> crate::Result<i16> {
-    if !src.has_remaining() {
-        return Err("Invalid i16".into());
-    }
+gen_cursor_util!(get_i16);
+// pub fn get_i16(src: &mut Cursor<&[u8]>) -> crate::Result<i16> {
+//     if !src.has_remaining() {
+//         return Err("Invalid i16".into());
+//     }
 
-    Ok(src.get_i16())
-}
+//     Ok(src.get_i16())
+// }
 
-pub fn get_i32(src: &mut Cursor<&[u8]>) -> crate::Result<i32> {
-    if !src.has_remaining() {
-        return Err("Invalid i32".into());
-    }
+gen_cursor_util!(get_i32);
+// pub fn get_i32(src: &mut Cursor<&[u8]>) -> crate::Result<i32> {
+//     if !src.has_remaining() {
+//         return Err("Invalid i32".into());
+//     }
 
-    Ok(src.get_i32())
-}
+//     Ok(src.get_i32())
+// }
 
-pub fn get_u8(src: &mut Cursor<&[u8]>) -> crate::Result<u8> {
-    if !src.has_remaining() {
-        return Err("Invalid u8".into());
-    }
+gen_cursor_util!(get_u8);
+// pub fn get_u8(src: &mut Cursor<&[u8]>) -> crate::Result<u8> {
+//     if !src.has_remaining() {
+//         return Err("Invalid u8".into());
+//     }
 
-    Ok(src.get_u8())
-}
+//     Ok(src.get_u8())
+// }
 
-pub fn get_u32(src: &mut Cursor<&[u8]>) -> crate::Result<u32> {
-    if !src.has_remaining() {
-        return Err("Invalid u32".into());
-    }
+gen_cursor_util!(get_u32);
+// pub fn get_u32(src: &mut Cursor<&[u8]>) -> crate::Result<u32> {
+//     if !src.has_remaining() {
+//         return Err("Invalid u32".into());
+//     }
 
-    Ok(src.get_u32())
-}
+//     Ok(src.get_u32())
+// }
 
-pub fn get_u64(src: &mut Cursor<&[u8]>) -> crate::Result<u64> {
-    if !src.has_remaining() {
-        return Err("Invalid u64".into());
-    }
+gen_cursor_util!(get_u64);
+// pub fn get_u64(src: &mut Cursor<&[u8]>) -> crate::Result<u64> {
+//     if !src.has_remaining() {
+//         return Err("Invalid u64".into());
+//     }
 
-    Ok(src.get_u64())
-}
+//     Ok(src.get_u64())
+// }
 
 fn get_length_with_encoding(src: &mut Cursor<&[u8]>) -> crate::Result<(u32, bool)> {
     let enc_byte = get_u8(src)?;
